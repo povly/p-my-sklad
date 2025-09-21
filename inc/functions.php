@@ -12,7 +12,6 @@ function p_my_sklad_get_upload_dir()
 
   if (!file_exists($plugin_dir)) {
     if (!wp_mkdir_p($plugin_dir)) {
-      error_log('p-my-sklad: Не удалось создать директорию ' . $plugin_dir);
       return false;
     }
   }
@@ -37,25 +36,11 @@ function p_my_sklad_cleanup_old_files()
   }
 }
 
-// Получение товаров из MoySklad с кэшированием в файл
-function p_my_sklad_get_products($force_refresh = false)
+/**
+ * Получение товаров из MoySklad
+ */
+function p_my_sklad_get_products()
 {
-  p_my_sklad_cleanup_old_files(); // Очищаем старые файлы
-
-  $upload_dir = p_my_sklad_get_upload_dir();
-  if (!$upload_dir) {
-    return null;
-  }
-
-  $cache_file = $upload_dir . '/ms-products-cache.json';
-  $cache_time = 3600 * ; // 1 час
-
-  if (!$force_refresh && file_exists($cache_file) && (time() - filemtime($cache_file)) < $cache_time) {
-    $cached = file_get_contents($cache_file);
-    $data = json_decode($cached, true);
-    return isset($data['rows']) ? $data['rows'] : [];
-  }
-
   $token = get_option('p_my_sklad_access_token');
   if (!$token) {
     error_log('p-my-sklad: Токен не найден');
@@ -81,8 +66,15 @@ function p_my_sklad_get_products($force_refresh = false)
   $body = wp_remote_retrieve_body($response);
   $data = json_decode($body, true);
 
-  if (isset($data['rows'])) {
-    file_put_contents($cache_file, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+  // Получаем директорию для сохранения
+  $upload_dir = p_my_sklad_get_upload_dir();
+  if ($upload_dir) {
+    // Сохраняем сырые данные в файл с временной меткой
+    $save_file = $upload_dir . '/ms-products-' . date('Y-m-d_H-i-s') . '.json';
+    file_put_contents(
+      $save_file,
+      json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
+    );
   }
 
   return isset($data['rows']) ? $data['rows'] : [];
@@ -228,6 +220,8 @@ function p_my_sklad_sideload_image($url, $parent_post_id)
   return $id;
 }
 
-$products = p_my_sklad_get_products();
+// $products = p_my_sklad_get_products();
+
 
 ?>
+
