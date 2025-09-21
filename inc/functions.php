@@ -4,38 +4,6 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-// Создаём директорию в uploads для хранения данных плагина
-function p_my_sklad_get_upload_dir()
-{
-  $upload_dir = wp_upload_dir();
-  $plugin_dir = $upload_dir['basedir'] . '/p-my-sklad';
-
-  if (!file_exists($plugin_dir)) {
-    if (!wp_mkdir_p($plugin_dir)) {
-      return false;
-    }
-  }
-
-  return $plugin_dir;
-}
-
-// Очистка старых файлов (опционально)
-function p_my_sklad_cleanup_old_files()
-{
-  $upload_dir = p_my_sklad_get_upload_dir();
-  if (!$upload_dir) return;
-
-  $files = glob($upload_dir . '/*.json');
-  $cutoff = time() - 7 * DAY_IN_SECONDS;
-
-  foreach ($files as $file) {
-    if (filemtime($file) < $cutoff) {
-      @unlink($file);
-      error_log('p-my-sklad: Удалён старый файл кэша: ' . basename($file));
-    }
-  }
-}
-
 /**
  * Получение товаров из MoySklad
  */

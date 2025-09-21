@@ -85,12 +85,12 @@ function p_my_sklad_render_settings_page()
 
   $stored_token = get_option('p_my_sklad_access_token', '');
   $login_value  = isset($_POST['p_my_sklad_login']) ? sanitize_text_field($_POST['p_my_sklad_login']) : '';
-  p_my_sklad_get_products();
+  settings_errors(P_MY_SKLAD_NAME);
 ?>
   <div class="wrap">
     <h1><?php echo esc_html__('Настройки МойСклад', 'p-my-sklad'); ?></h1>
 
-    <form method="post" action="<?php echo esc_url(admin_url('options-general.php?page=' . P_MY_SKLAD_NAME)); ?>">
+    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=' . P_MY_SKLAD_NAME)); ?>">
       <?php wp_nonce_field('p_my_sklad_token_nonce'); ?>
 
       <table class="form-table" role="presentation">
