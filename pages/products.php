@@ -276,7 +276,7 @@ function p_my_sklad_run_sync_batch()
 
   foreach ($data['rows'] as $product) {
     // 🔽 Здесь вызывай свою функцию импорта
-    // Пример: p_my_sklad_import_single_product($product);
+    p_my_sklad_import_single_product($product);
 
     // Для теста — просто логируем
     error_log("Импортирован товар: " . ($product['name'] ?? 'N/A'));
