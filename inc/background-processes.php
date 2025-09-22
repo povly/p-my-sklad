@@ -6,9 +6,12 @@ class P_My_Sklad_Products_Sync_Process extends WP_Background_Process
   protected $prefix = 'p_my_sklad';
   protected $action = 'products_sync';
 
+  protected $cron_interval = 0;
+
 
   protected function task($item)
   {
+    error_log('DEBUG: Запущен task() фонового процесса. Item: ' . print_r($item, true));
     $settings = get_option('p_my_sklad_settings_products');
 
     // Получаем токен
@@ -74,7 +77,7 @@ class P_My_Sklad_Products_Sync_Process extends WP_Background_Process
     // Импортируем товары
     foreach ($data['rows'] as $product) {
       // p_my_sklad_import_single_product($product);
-      error_log($product['code'] . '; ');
+      error_log(print_r($product, true));
       $item['processed']++;
     }
 
