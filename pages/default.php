@@ -205,16 +205,16 @@ function p_my_sklad_render_settings_page()
           <td>
             <select name="p_my_sklad_settings_products[product_interval]">
               <option value=""><?php _e('— Не запускать автоматически —', 'p-my-sklad'); ?></option>
-              <option value="hourly" <?php isset($settings) ? selected($settings['product_interval'], 'hourly') : ''; ?>>
+              <option value="hourly" <?php isset($settings) && isset($settings['product_interval']) ? selected($settings['product_interval'], 'hourly') : ''; ?>>
                 <?php _e('Каждый час', 'p-my-sklad'); ?>
               </option>
-              <option value="every_six_hours" <?php isset($settings) ? selected($settings['product_interval'], 'every_six_hours') : ''; ?>>
+              <option value="every_six_hours" <?php isset($settings) && isset($settings['product_interval']) ? selected($settings['product_interval'], 'every_six_hours') : ''; ?>>
                 <?php _e('Каждые 6 часов', 'p-my-sklad'); ?>
               </option>
-              <option value="daily" <?php isset($settings) ? selected($settings['product_interval'], 'daily') : ''; ?>>
+              <option value="daily" <?php isset($settings) && isset($settings['product_interval']) ? selected($settings['product_interval'], 'daily') : ''; ?>>
                 <?php _e('Раз в день', 'p-my-sklad'); ?>
               </option>
-              <option value="weekly" <?php isset($settings) ? selected($settings['product_interval'], 'weekly') : ''; ?>>
+              <option value="weekly" <?php isset($settings) && isset($settings['product_interval']) ? selected($settings['product_interval'], 'weekly') : ''; ?>>
                 <?php _e('Раз в неделю', 'p-my-sklad'); ?>
               </option>
             </select>
@@ -237,7 +237,7 @@ function p_my_sklad_render_settings_page()
  * @param string $password
  * @return false|string Access token on success, false on failure
  */
-function p_my_sklad_fetch_token(string $login, string $password): bool|string
+function p_my_sklad_fetch_token(string $login, string $password)
 {
   $credentials = base64_encode("$login:$password");
 

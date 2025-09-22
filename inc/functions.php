@@ -182,7 +182,7 @@ function p_my_sklad_import_single_product($ms_product)
   $product->set_price($sale_price > 0 ? $sale_price : $regular_price);
 
 
-
+  $product_id = $product->save();
 
   // === 7. Загружаем изображения (если есть) ===
   $token = get_option('p_my_sklad_access_token');
@@ -208,8 +208,6 @@ function p_my_sklad_import_single_product($ms_product)
       $product->set_gallery_image_ids(array_slice($attachment_ids, 1));
     }
   }
-
-  $product_id = $product->save();
 
   // === 8. Устанавливаем единицу измерения ===
   if (!empty($ms_product['uom']['meta']['href'])) {
