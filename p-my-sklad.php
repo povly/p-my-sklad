@@ -16,8 +16,6 @@ define('P_MY_SKLAD_NAME', 'p_my_sklad');
 define('P_MY_SKLAD_SLUG', plugin_basename(__FILE__));
 define('P_MY_SKLAD_PATH', plugin_dir_path(__FILE__));
 
-require __DIR__ . '/vendor/autoload.php';
-
 // Подключаем фильтры
 require_once P_MY_SKLAD_PATH . 'inc/filters.php';
 require_once P_MY_SKLAD_PATH . 'inc/functions.php';
