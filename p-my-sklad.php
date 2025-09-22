@@ -11,15 +11,23 @@
 defined('ABSPATH') || exit;
 
 // Константы плагина
-define('P_MY_SKLAD_VERSION', '0.1');
+define('P_MY_SKLAD_VERSION', '0.2.0');
 define('P_MY_SKLAD_NAME', 'p_my_sklad');
 define('P_MY_SKLAD_SLUG', plugin_basename(__FILE__));
 define('P_MY_SKLAD_PATH', plugin_dir_path(__FILE__));
 
+require __DIR__ . '/vendor/autoload.php';
+
 // Подключаем фильтры
 require_once P_MY_SKLAD_PATH . 'inc/filters.php';
 require_once P_MY_SKLAD_PATH . 'inc/functions.php';
+require_once P_MY_SKLAD_PATH . 'inc/background-processes.php'; // Фоновый процесс (альтернатива wp-cron)
+
+// ajax
+require_once P_MY_SKLAD_PATH . 'ajax/product_start_sync.php';
+require_once P_MY_SKLAD_PATH . 'ajax/product_check_sync.php';
 
 // Страницы
-require_once P_MY_SKLAD_PATH . 'pages/token.php';
+require_once P_MY_SKLAD_PATH . 'pages/default.php';
 require_once P_MY_SKLAD_PATH . 'pages/products.php';
+

@@ -75,6 +75,49 @@ function p_my_sklad_handle_form_submission()
 }
 
 /**
+ * Обработка POST-запроса формы.
+ */
+add_action('admin_init', 'p_my_sklad_handle_settings_form_submission');
+
+function p_my_sklad_handle_settings_form_submission()
+{
+  // Проверяем, что это наша форма
+  if (!isset($_POST['p_my_sklad_save_settings']) || !current_user_can('manage_options')) {
+    return;
+  }
+
+  // Проверка nonce
+  if (!wp_verify_nonce($_POST['_wpnonce'] ?? '', 'p_my_sklad_token_nonce_settings')) {
+    add_settings_error(
+      P_MY_SKLAD_NAME,
+      'nonce_failed',
+      __('Недопустимый запрос. Попробуйте снова.', 'p-my-sklad'),
+      'error'
+    );
+    return;
+  }
+
+  $settings = $_POST['p_my_sklad_settings_products'] ?? [];
+
+  // Санитизация данных — ОБЯЗАТЕЛЬНО!
+  $sanitized_settings = [
+    'categories_filters' => sanitize_text_field($settings['categories_filters'] ?? ''),
+    'products_limit'      => sanitize_text_field($settings['products_limit'] ?? ''),
+    // 'checkbox_field'     => isset($settings['checkbox_field']) ? 1 : 0,
+  ];
+
+  update_option('p_my_sklad_settings_products', $sanitized_settings);
+
+  // Уведомление об успешном сохранении
+  add_settings_error(
+    P_MY_SKLAD_NAME,
+    'settings_updated',
+    __('Настройки синхронизации товаров успешно сохранены.', 'p-my-sklad'),
+    'updated'
+  );
+}
+
+/**
  * Отображение страницы настроек.
  */
 function p_my_sklad_render_settings_page()
@@ -83,7 +126,7 @@ function p_my_sklad_render_settings_page()
     wp_die(__('У вас нет доступа к этой странице.', 'p-my-sklad'));
   }
 
-  $stored_token = get_option('p_my_sklad_access_token', '');
+  $settings = get_option('p_my_sklad_settings_products', []);
   $login_value  = isset($_POST['p_my_sklad_login']) ? sanitize_text_field($_POST['p_my_sklad_login']) : '';
   settings_errors(P_MY_SKLAD_NAME);
 ?>
@@ -117,14 +160,38 @@ function p_my_sklad_render_settings_page()
       <?php submit_button(esc_html__('Сохранить'), 'primary', 'p_my_sklad_save'); ?>
     </form>
 
-    <!-- <h2 class="title"><?php echo esc_html__('Текущий токен', 'p-my-sklad'); ?></h2>
-    <?php if ($stored_token): ?>
-      <pre style="background: #f5f5f5; padding: 1em; border-radius: 4px; overflow-wrap: break-word;"><?php echo esc_html($stored_token); ?></pre>
-    <?php else: ?>
-      <p class="description"><?php echo esc_html__('Токен ещё не сохранён.', 'p-my-sklad'); ?></p>
-    <?php endif; ?>
-  </div> -->
-  <?php
+    <h2><?php echo esc_html__('Настройки синхронизации товаров', 'p-my-sklad'); ?></h2>
+
+    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=' . P_MY_SKLAD_NAME)); ?>">
+      <?php wp_nonce_field('p_my_sklad_token_nonce_settings'); ?>
+
+      <table class="form-table" role="presentation">
+        <tr>
+          <th scope="row">
+            <label for="p_my_sklad_categories_filters"><?php echo esc_html__('Фильтр товаров по категории', 'p-my-sklad'); ?></label>
+          </th>
+          <td>
+            <input type="text" name="p_my_sklad_settings_products[categories_filters]" id="p_my_sklad_categories_filters"
+              value="<?php echo esc_attr($settings['categories_filters'] ?? ''); ?>" class="regular-text">
+          </td>
+        </tr>
+
+        <tr>
+          <th scope="row">
+            <label for="p_my_sklad_products_limit"><?php echo esc_html__('Количество товаров', 'p-my-sklad'); ?></label>
+          </th>
+          <td>
+            <input type="text" name="p_my_sklad_settings_products[products_limit]" id="p_my_sklad_products_limit"
+              value="<?php echo esc_attr($settings['products_limit'] ?? ''); ?>" class="regular-text">
+          </td>
+        </tr>
+      </table>
+
+      <?php submit_button(esc_html__('Сохранить'), 'primary', 'p_my_sklad_save_settings'); ?>
+    </form>
+
+  </div>
+<?php
 }
 
 /**
@@ -152,7 +219,12 @@ function p_my_sklad_fetch_token(string $login, string $password): bool|string
   $code = wp_remote_retrieve_response_code($response);
 
   if ($code !== 201) {
-    error_log('MySklad Token HTTP Error: ' . $code . ' - ' . wp_remote_retrieve_body($response));
+    add_settings_error(
+      P_MY_SKLAD_NAME,
+      'nonce_failed',
+      __('MySklad Token HTTP Error: ' . $code . ' - ' . wp_remote_retrieve_body($response), 'p-my-sklad'),
+      'error'
+    );
     return false;
   }
 
@@ -163,6 +235,11 @@ function p_my_sklad_fetch_token(string $login, string $password): bool|string
     return $data['access_token'];
   }
 
-  error_log('MySklad Token Response Invalid: ' . $body);
+  add_settings_error(
+    P_MY_SKLAD_NAME,
+    'nonce_failed',
+    __('MySklad Token Response Invalid: ' . $body, 'p-my-sklad'),
+    'error'
+  );
   return false;
 }

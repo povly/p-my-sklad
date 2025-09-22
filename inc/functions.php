@@ -4,50 +4,6 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-/**
- * Получение товаров из MoySklad
- */
-function p_my_sklad_get_products()
-{
-  $token = get_option('p_my_sklad_access_token');
-  if (!$token) {
-    error_log('p-my-sklad: Токен не найден');
-    return null;
-  }
-
-  $response = wp_remote_get(
-    'https://api.moysklad.ru/api/remap/1.2/entity/product',
-    [
-      'headers' => [
-        'Authorization'   => "Bearer {$token}",
-        'Accept-Encoding' => 'gzip',
-      ],
-      'timeout' => 15,
-    ]
-  );
-
-  if (is_wp_error($response)) {
-    error_log('p-my-sklad API error: ' . $response->get_error_message());
-    return null;
-  }
-
-  $body = wp_remote_retrieve_body($response);
-  $data = json_decode($body, true);
-
-  // Получаем директорию для сохранения
-  $upload_dir = p_my_sklad_get_upload_dir();
-  if ($upload_dir) {
-    // Сохраняем сырые данные в файл с временной меткой
-    $save_file = $upload_dir . '/ms-products-' . date('Y-m-d_H-i-s') . '.json';
-    file_put_contents(
-      $save_file,
-      json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
-    );
-  }
-
-  return isset($data['rows']) ? $data['rows'] : [];
-}
-
 
 /**
  * Добавляет или обновляет товар WooCommerce.
@@ -188,8 +144,49 @@ function p_my_sklad_sideload_image($url, $parent_post_id)
   return $id;
 }
 
-// $products = p_my_sklad_get_products();
+function p_my_sklad_dd($data)
+{
+  echo '<pre>';
+  echo print_r($data, true);
+  echo '</pre>';
+}
 
+function p_my_sklad_get_assortments()
+{
+  $token = get_option('p_my_sklad_access_token');
+  if (!$token) {
+    add_settings_error(
+      P_MY_SKLAD_NAME . '_product',
+      'token_failed',
+      __('Токен не найден', 'p-my-sklad'),
+      'error'
+    );
+    return;
+  }
 
-?>
+  $response = wp_remote_get(
+    'https://api.moysklad.ru/api/remap/1.2/entity/assortment?limit=5&offset=0',
+    [
+      'headers' => [
+        'Authorization'   => "Bearer {$token}",
+        'Accept-Encoding' => 'gzip',
+      ],
+      'timeout' => 15,
+    ]
+  );
 
+  if (is_wp_error($response)) {
+    add_settings_error(
+      P_MY_SKLAD_NAME . '_product',
+      'token_failed',
+      __('p-my-sklad API error: ' . $response->get_error_message(), 'p-my-sklad'),
+      'error'
+    );
+    return null;
+  }
+
+  $body = wp_remote_retrieve_body($response);
+  $data = json_decode($body, true);
+
+  return isset($data['rows']) ? $data['rows'] : [];
+}
