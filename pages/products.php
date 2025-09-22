@@ -281,8 +281,17 @@ function p_my_sklad_run_sync_batch()
     // Для теста — просто логируем
     error_log("Импортирован товар: " . ($product['name'] ?? 'N/A'));
 
+
     $progress['processed']++;
+
+    $progress['message'] = "Обработано {$progress['processed']} из " . ($progress['total'] ?: '?') . "...";
+    update_option('p_my_sklad_products_sync_progress', $progress);
+
+    // ✅ Небольшая задержка между товарами — чтобы не перегружать сервер
+    usleep(50000); // 0.05 секунды
   }
+
+  sleep(3);
 
   // Сохраняем прогресс (без batch_size!)
   $progress['message'] = "Обработано {$progress['processed']} из " . ($progress['total'] ?: '?') . "...";

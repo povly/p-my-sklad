@@ -97,12 +97,14 @@ function p_my_sklad_import_single_product($ms_product)
 {
   // === 1. Проверяем фильтр категории ===
   $settings = get_option('p_my_sklad_settings_products', []);
-  $filter_path = $settings['categories_filters'] ?? '';
+  $filter_path = trim($settings['categories_filters'] ?? '');
 
-  $product_path = $ms_product['pathName'] ?? '';
+  if (!empty($filter_path)) {
+    $product_path = $ms_product['pathName'] ?? '';
 
-  if (!empty($filter_path) && strpos($product_path, $filter_path) !== 0) {
-    return; // Пропускаем, если не совпадает путь
+    if (strpos($product_path, $filter_path) !== 0) {
+      return; // Пропускаем, если не начинается с указанного пути
+    }
   }
 
   // === 2. Получаем код товара из МойСклад ===
@@ -130,7 +132,7 @@ function p_my_sklad_import_single_product($ms_product)
   if ($query->have_posts()) {
     $query->the_post();
     $product_id = get_the_ID();
-    wc_setup_product_data($product_id); // Подготавливаем для WC_Product
+    wc_setup_product_data($product_id);
   }
 
   // === 4. Создаём или получаем объект товара ===
@@ -143,28 +145,85 @@ function p_my_sklad_import_single_product($ms_product)
 
   $product->set_name($name);
   $product->set_description($description);
-  $product->set_short_description($description); // Можно отдельно, если нужно
+  $product->set_short_description($description);
   $product->set_stock_quantity($quantity);
   $product->set_manage_stock(true);
   $product->set_stock_status($quantity > 0 ? 'instock' : 'outofstock');
 
-  // === 6. Устанавливаем цену из salePrices ===
-  $price = 0;
+  // === 6. Устанавливаем цены из salePrices ===
+  $regular_price = 0;
+  $sale_price = 0;
+
   if (!empty($ms_product['salePrices'])) {
-    foreach ($ms_product['salePrices'] as $sale_price) {
-      // Ищем цену с типом "Цена продажи" или просто первую
-      if (isset($sale_price['value'])) {
-        $price = (float) $sale_price['value'] / 100; // ← ДЕЛИМ НА 100!
-        break;
+    foreach ($ms_product['salePrices'] as $sale_price_item) {
+      if (!isset($sale_price_item['value']) || !isset($sale_price_item['priceType']['name'])) {
+        continue;
+      }
+
+      $value = (float) $sale_price_item['value'] / 100; // Делим на 100 → рубли
+      $price_type_name = $sale_price_item['priceType']['name'];
+
+      if ($price_type_name === 'Цена продажи') {
+        $regular_price = $value;
+      } elseif ($price_type_name === 'Цена со скидкой' && $value > 0) {
+        $sale_price = $value;
       }
     }
   }
 
-  $product->set_regular_price($price);
-  $product->set_price($price); // Устанавливаем текущую цену
+  $product->set_regular_price($regular_price);
 
-  // === 7. Сохраняем товар и мета-поле с кодом МойСклад ===
+  if ($sale_price > 0 && $sale_price < $regular_price) {
+    $product->set_sale_price($sale_price);
+  } else {
+    $product->set_sale_price('');
+  }
+
+  $product->set_price($sale_price > 0 ? $sale_price : $regular_price);
+
+
+
+
+  // === 7. Загружаем изображения (если есть) ===
+  $token = get_option('p_my_sklad_access_token');
+  $attachment_ids = [];
+
+  if ($token && !empty($ms_product['images']['meta']['href'])) {
+    $image_rows = p_my_sklad_fetch_product_images($ms_product['meta']['href'], $token);
+
+    foreach ($image_rows as $image) {
+      if (!empty($image['meta']['downloadHref'])) {
+        $download_url = trim($image['meta']['downloadHref']);
+        $filename = $image['filename'] ?? 'image.jpg';
+        $attachment_id = p_my_sklad_download_and_attach_image($download_url, $filename, $product_id, $token);
+
+        if ($attachment_id) {
+          $attachment_ids[] = $attachment_id;
+        }
+      }
+    }
+
+    if (!empty($attachment_ids)) {
+      set_post_thumbnail($product_id, $attachment_ids[0]);
+      $product->set_gallery_image_ids(array_slice($attachment_ids, 1));
+    }
+  }
+
   $product_id = $product->save();
+
+  // === 8. Устанавливаем единицу измерения ===
+  if (!empty($ms_product['uom']['meta']['href'])) {
+    $token = get_option('p_my_sklad_access_token');
+    if ($token) {
+      $uom_name = p_my_sklad_fetch_uom_name($ms_product['uom']['meta']['href'], $token);
+      if (!empty($uom_name)) {
+        update_post_meta($product_id, '_oh_product_unit_name', $uom_name);
+        error_log("MySklad: Установлена единица измерения: {$uom_name} для товара ID: {$product_id}");
+      }
+    }
+  }
+
+  // === 9. Сохраняем товар и мета-поле с кодом МойСклад ===
 
   if ($product_id) {
     update_post_meta($product_id, 'p_my_sklad_code', $ms_code);
@@ -174,4 +233,163 @@ function p_my_sklad_import_single_product($ms_product)
   } else {
     error_log("MySklad: Ошибка сохранения товара '{$name}' (код: {$ms_code})");
   }
+}
+
+/**
+ * Получает список изображений товара из API МойСклад
+ */
+function p_my_sklad_fetch_product_images($product_href, $token)
+{
+  $images_url = $product_href . '/images';
+
+  $response = wp_remote_get($images_url, [
+    'headers' => [
+      'Authorization'   => "Bearer {$token}",
+      'Accept-Encoding' => 'gzip',
+    ],
+    'timeout' => 30,
+  ]);
+
+  if (is_wp_error($response)) {
+    error_log("MySklad: Ошибка получения изображений для {$product_href}: " . $response->get_error_message());
+    return [];
+  }
+
+  $body = wp_remote_retrieve_body($response);
+  $data = json_decode($body, true);
+
+  return $data['rows'] ?? [];
+}
+
+
+/**
+ * Ищет вложение по сохранённому URL из МойСклад
+ */
+function p_my_sklad_find_attachment_by_source_url($source_url)
+{
+  global $wpdb;
+
+  $query = $wpdb->prepare(
+    "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value = %s LIMIT 1",
+    '_p_my_sklad_image_source_url',
+    $source_url
+  );
+
+  $attachment_id = $wpdb->get_var($query);
+  return $attachment_id ? (int) $attachment_id : false;
+}
+
+/**
+ * Скачивает изображение через временную ссылку (Location) и загружает его в медиатеку WordPress.
+ * Возвращает ID вложения или 0.
+ */
+function p_my_sklad_download_and_attach_image($download_url, $filename, $product_id, $token)
+{
+
+  if (!function_exists('media_handle_sideload')) {
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+  }
+
+  // Проверяем, не загружали ли мы уже это изображение
+  $existing_attachment = p_my_sklad_find_attachment_by_source_url($download_url);
+  if ($existing_attachment) {
+    error_log("MySklad: Изображение уже загружено: {$download_url} (ID: {$existing_attachment})");
+    return $existing_attachment;
+  }
+
+  // === ШАГ 1: Получаем временную ссылку через редирект ===
+  $response = wp_remote_get($download_url, [
+    'headers' => [
+      'Authorization' => "Bearer {$token}",
+      'Accept-Encoding' => 'gzip',
+    ],
+    'timeout'   => 30,
+    'redirection' => 0, // ← Отключаем автоматический редирект, чтобы получить Location вручную
+  ]);
+
+  if (is_wp_error($response)) {
+    error_log("MySklad: Ошибка получения временной ссылки для {$download_url}: " . $response->get_error_message());
+    return 0;
+  }
+
+  $code = wp_remote_retrieve_response_code($response);
+  if ($code !== 302) {
+    error_log("MySklad: Ожидался редирект 302, получен код {$code} для {$download_url}");
+    return 0;
+  }
+
+  $headers = wp_remote_retrieve_headers($response);
+  if (empty($headers['location'])) {
+    error_log("MySklad: Заголовок Location отсутствует для {$download_url}");
+    return 0;
+  }
+
+  $temporary_url = $headers['location'];
+  error_log("MySklad: Получена временная ссылка: {$temporary_url}");
+
+  // === ШАГ 2: Скачиваем файл по временной ссылке (без авторизации) ===
+  $tmp_file = download_url($temporary_url);
+  if (is_wp_error($tmp_file)) {
+    error_log("MySklad: Ошибка скачивания изображения по временной ссылке {$temporary_url}: " . $tmp_file->get_error_message());
+    return 0;
+  }
+
+  // === ШАГ 3: Загружаем в медиатеку ===
+  $file_array = [
+    'name'     => sanitize_file_name($filename),
+    'tmp_name' => $tmp_file,
+  ];
+
+  $attachment_id = media_handle_sideload($file_array, $product_id);
+  if (is_wp_error($attachment_id)) {
+    error_log("MySklad: Ошибка загрузки изображения в медиатеку: " . $attachment_id->get_error_message());
+    @unlink($tmp_file);
+    return 0;
+  }
+
+  // Сохраняем исходный URL (downloadHref), чтобы не скачивать повторно
+  update_post_meta($attachment_id, '_p_my_sklad_image_source_url', $download_url);
+
+  error_log("MySklad: Изображение загружено через временную ссылку: {$download_url} (ID: {$attachment_id})");
+  return $attachment_id;
+}
+
+
+/**
+ * Получает название единицы измерения по ссылке из API МойСклад
+ */
+function p_my_sklad_fetch_uom_name($uom_href, $token)
+{
+  if (empty($uom_href) || empty($token)) {
+    return '';
+  }
+
+  // Обрезаем пробелы — они есть в твоих данных!
+  $uom_href = trim($uom_href);
+
+  $response = wp_remote_get($uom_href, [
+    'headers' => [
+      'Authorization'   => "Bearer {$token}",
+      'Accept-Encoding' => 'gzip',
+    ],
+    'timeout' => 30,
+  ]);
+
+  if (is_wp_error($response)) {
+    error_log("MySklad: Ошибка получения единицы измерения: " . $response->get_error_message());
+    return '';
+  }
+
+  $code = wp_remote_retrieve_response_code($response);
+  if ($code !== 200) {
+    error_log("MySklad: Ошибка HTTP {$code} при получении единицы измерения: {$uom_href}");
+    return '';
+  }
+
+  $body = wp_remote_retrieve_body($response);
+  $data = json_decode($body, true);
+
+  return $data['name'] ?? '';
 }
