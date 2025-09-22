@@ -23,3 +23,15 @@ function add_custom_plugin_link($links)
 }
 
 add_filter("plugin_action_links_" . P_MY_SKLAD_SLUG, 'add_custom_plugin_link');
+
+add_filter('cron_schedules', 'p_my_sklad_add_cron_intervals');
+
+function p_my_sklad_add_cron_intervals($schedules)
+{
+  $schedules['every_six_hours'] = [
+    'interval' => 6 * HOUR_IN_SECONDS,
+    'display'  => __('Каждые 6 часов', 'p-my-sklad'),
+  ];
+
+  return $schedules;
+}

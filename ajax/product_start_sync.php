@@ -15,16 +15,12 @@ function p_my_sklad_products_start_sync_f()
   // Очищаем предыдущие задачи
   wp_clear_scheduled_hook('p_my_sklad_run_sync_batch');
 
-  $settings = get_option('p_my_sklad_settings_products', []);
-  $batch_size = !empty($settings['products_limit']) ? (int)$settings['products_limit'] : 200;
-
   $initial_state = [
-    'status'     => 'in_progress',
-    'processed'  => 0,
-    'total'      => 0,
-    'nextHref'   => null,
-    'batch_size' => $batch_size,
-    'message'    => 'Запуск синхронизации...',
+    'status'    => 'in_progress',
+    'processed' => 0,
+    'total'     => 0,
+    'nextHref'  => null,
+    'message'   => 'Запуск синхронизации...',
   ];
 
   update_option('p_my_sklad_products_sync_progress', $initial_state);

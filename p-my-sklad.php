@@ -19,7 +19,6 @@ define('P_MY_SKLAD_PATH', plugin_dir_path(__FILE__));
 // Подключаем фильтры
 require_once P_MY_SKLAD_PATH . 'inc/filters.php';
 require_once P_MY_SKLAD_PATH . 'inc/functions.php';
-require_once P_MY_SKLAD_PATH . 'inc/background-processes.php'; // Фоновый процесс (альтернатива wp-cron)
 
 // ajax
 require_once P_MY_SKLAD_PATH . 'ajax/product_start_sync.php';

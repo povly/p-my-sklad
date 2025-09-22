@@ -103,10 +103,24 @@ function p_my_sklad_handle_settings_form_submission()
   $sanitized_settings = [
     'categories_filters' => sanitize_text_field($settings['categories_filters'] ?? ''),
     'products_limit'      => sanitize_text_field($settings['products_limit'] ?? ''),
-    // 'checkbox_field'     => isset($settings['checkbox_field']) ? 1 : 0,
+    'product_interval'      => sanitize_text_field($settings['product_interval'] ?? ''),
   ];
 
   update_option('p_my_sklad_settings_products', $sanitized_settings);
+
+  // === УПРАВЛЕНИЕ CRON ===
+  $interval = $sanitized_settings['product_interval'];
+
+  // Сначала удаляем все запланированные задачи
+  wp_clear_scheduled_hook('p_my_sklad_cron_sync_products');
+
+  // Если интервал выбран — планируем новую задачу
+  if (!empty($interval)) {
+    // Проверяем, существует ли такой интервал
+    if (wp_get_schedule('p_my_sklad_cron_sync_products') !== $interval) {
+      wp_schedule_event(time(), $interval, 'p_my_sklad_cron_sync_products');
+    }
+  }
 
   // Уведомление об успешном сохранении
   add_settings_error(
@@ -183,6 +197,28 @@ function p_my_sklad_render_settings_page()
           <td>
             <input type="text" name="p_my_sklad_settings_products[products_limit]" id="p_my_sklad_products_limit"
               value="<?php echo esc_attr($settings['products_limit'] ?? ''); ?>" class="regular-text">
+          </td>
+        </tr>
+
+        <tr>
+          <th scope="row"><?php _e('Интервал полной синхронизации', 'p-my-sklad'); ?></th>
+          <td>
+            <select name="p_my_sklad_settings_products[product_interval]">
+              <option value=""><?php _e('— Не запускать автоматически —', 'p-my-sklad'); ?></option>
+              <option value="hourly" <?php isset($settings) ? selected($settings['product_interval'], 'hourly') : ''; ?>>
+                <?php _e('Каждый час', 'p-my-sklad'); ?>
+              </option>
+              <option value="every_six_hours" <?php isset($settings) ? selected($settings['product_interval'], 'every_six_hours') : ''; ?>>
+                <?php _e('Каждые 6 часов', 'p-my-sklad'); ?>
+              </option>
+              <option value="daily" <?php isset($settings) ? selected($settings['product_interval'], 'daily') : ''; ?>>
+                <?php _e('Раз в день', 'p-my-sklad'); ?>
+              </option>
+              <option value="weekly" <?php isset($settings) ? selected($settings['product_interval'], 'weekly') : ''; ?>>
+                <?php _e('Раз в неделю', 'p-my-sklad'); ?>
+              </option>
+            </select>
+
           </td>
         </tr>
       </table>

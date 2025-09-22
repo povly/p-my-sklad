@@ -28,3 +28,4 @@ function p_my_sklad_products_check_sync_status_f()
     'log'      => [],
   ]);
 }
+
