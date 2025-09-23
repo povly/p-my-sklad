@@ -56,6 +56,12 @@ function p_my_sklad_render_subpage_product()
 
     <form id="p-my-sklad-products-sync" method="post" action="">
       <?php wp_nonce_field('p_my_sklad_token_nonce_product'); ?>
+      <p class="description" style="max-width: 500px;">
+        Если ничего не меняется в течении 10 минут. <br>Перезапустите синхронизацию или&nbsp;обновите настройки "Настройки синхронизации товаров" и нажмите Сохранить. <br><br>Он сбросит что было, снова обновит автоматическую проверку и потом в нужное время (через час, через пол дня и т.д.)
+        <br><br>
+
+        Если надо узнать про автоматическую синхронизацию. Посмотрите <a href="<?php echo admin_url() ?>admin.php?page=wc-status&tab=logs&source=p-my-sklad"> журнал</a>
+      </p>
       <?php submit_button('Запустить синхронизацию', 'primary', 'start_sync'); ?>
     </form>
 
@@ -99,32 +105,32 @@ function p_my_sklad_render_subpage_product()
               $text.text(data.progress + '%');
               $message.text('Проверка активности фоновой задачи...');
 
-              // 🔎 Проверяем, запланирована ли задача в cron
-              $.post(ajaxurl, {
-                action: 'p_my_sklad_product_check_cron_active',
-                nonce: '<?php echo wp_create_nonce("p_my_sklad_products_check_sync_nonce"); ?>'
-              }, function(cronRes) {
-                if (cronRes.success && cronRes.data.is_scheduled) {
-                  // ✅ Задача запланирована → продолжаем опрос
-                  $message.text(data.message);
-                  startPolling();
-                } else {
-                  // ❌ Задача НЕ запланирована → значит, остановлена или удалена
-                  const errorMsg = 'Синхронизация была прервана или удалена из cron. Перезапустите';
-                  $message.css('color', 'red').text(errorMsg);
-                  $bar.css('background', '#f44336');
-                  $submitButton.prop('disabled', false).val('Запустить снова');
+              // // 🔎 Проверяем, запланирована ли задача в cron
+              // $.post(ajaxurl, {
+              //   action: 'p_my_sklad_product_check_cron_active',
+              //   nonce: '<?php echo wp_create_nonce("p_my_sklad_products_check_sync_nonce"); ?>'
+              // }, function(cronRes) {
+              //   if (cronRes.success && cronRes.data.is_scheduled) {
+              //     // ✅ Задача запланирована → продолжаем опрос
+              //     $message.text(data.message);
+              //     startPolling();
+              //   } else {
+              //     // ❌ Задача НЕ запланирована → значит, остановлена или удалена
+              //     const errorMsg = 'Синхронизация была прервана или удалена из cron. Перезапустите';
+              //     $message.css('color', 'red').text(errorMsg);
+              //     $bar.css('background', '#f44336');
+              //     $submitButton.prop('disabled', false).val('Запустить снова');
 
-                  // ⚠️ Опционально: автоматически сбросить option на сервере
-                  $.post(ajaxurl, {
-                    action: 'p_my_sklad_reset_broken_sync',
-                    nonce: '<?php echo wp_create_nonce("p_my_sklad_products_check_sync_nonce"); ?>'
-                  });
-                }
-              }).fail(function() {
-                $message.css('color', 'orange').text('Не удалось проверить cron. Возможно, он был удалён.');
-                $submitButton.prop('disabled', false).val('Перезапустить');
-              });
+              //     // ⚠️ Опционально: автоматически сбросить option на сервере
+              //     $.post(ajaxurl, {
+              //       action: 'p_my_sklad_reset_broken_sync',
+              //       nonce: '<?php echo wp_create_nonce("p_my_sklad_products_check_sync_nonce"); ?>'
+              //     });
+              //   }
+              // }).fail(function() {
+              //   $message.css('color', 'orange').text('Не удалось проверить cron. Возможно, он был удалён.');
+              //   $submitButton.prop('disabled', false).val('Перезапустить');
+              // });
             } else if (data.status === 'error') {
               $container.show();
               $bar.css('width', data.progress + '%');
