@@ -3,7 +3,7 @@
 /**
  * Plugin Name: МойСклад интеграция
  * Description: Синхронизация магазина с МойСклад
- * Version: 0.4.1
+ * Version: 0.4.2
  * Author: Anatoly Porshnyov
  * Text Domain: p-my-sklad
  *  */
@@ -11,7 +11,7 @@
 defined('ABSPATH') || exit;
 
 // Константы плагина
-define('P_MY_SKLAD_VERSION', '0.4.1');
+define('P_MY_SKLAD_VERSION', '0.4.2');
 define('P_MY_SKLAD_NAME', 'p_my_sklad');
 define('P_MY_SKLAD_SLUG', plugin_basename(__FILE__));
 define('P_MY_SKLAD_PATH', plugin_dir_path(__FILE__));
