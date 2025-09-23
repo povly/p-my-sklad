@@ -98,10 +98,9 @@ function p_my_sklad_import_single_product($ms_product)
   // === 1. Проверяем фильтр категории ===
   $settings = get_option('p_my_sklad_settings_products', []);
   $filter_path = trim($settings['categories_filters'] ?? '');
+  $product_path = $ms_product['pathName'] ?? '';
 
   if (!empty($filter_path)) {
-    $product_path = $ms_product['pathName'] ?? '';
-
     if (strpos($product_path, $filter_path) !== 0) {
       return; // Пропускаем, если не начинается с указанного пути
     }
@@ -110,7 +109,7 @@ function p_my_sklad_import_single_product($ms_product)
   // === 2. Получаем код товара из МойСклад ===
   $ms_code = $ms_product['code'] ?? '';
   if (empty($ms_code)) {
-    error_log("MySklad: Пропущен товар без code: " . ($ms_product['name'] ?? 'N/A'));
+    // error_log("MySklad: Пропущен товар без code: " . ($ms_product['name'] ?? 'N/A'));
     return;
   }
 
@@ -184,6 +183,108 @@ function p_my_sklad_import_single_product($ms_product)
 
   $product_id = $product->save();
 
+  // === 6.5. Проверка категории товара и ACF-фильтра p_my_sklad_categories (с fallback на имя категории) ===
+  static $cached_categories = null;       // Кеш: [category_id => full_name]
+  static $cached_acf_categories = null;   // Кеш: [category_id => массив разрешённых подкатегорий]
+
+  // Инициализируем кеш ACF, если не создан
+  if ($cached_acf_categories === null) {
+      $cached_acf_categories = [];
+  }
+
+  // Получаем путь категории товара из МойСклад
+  if (empty($product_path)) {
+    // error_log("MySklad: Товар '{$ms_product['name'] ?? 'N/A'}' (код: {$ms_code}) не имеет pathName — пропуск категории.");
+    $product->set_status('draft');
+    $product->save();
+    return;
+  }
+
+  // Разбиваем путь: например "Cайт/Сладкое" → ['Cайт', 'Сладкое']
+  $path_parts = explode('/', $product_path);
+  $category_name = trim(end($path_parts)); // "Сладкое"
+  $full_category_path = $product_path;     // "Cайт/Сладкое"
+
+  // Инициализируем кеш категорий, если не загружен
+  if ($cached_categories === null) {
+      $all_categories = get_terms([
+          'taxonomy'   => 'product_cat',
+          'hide_empty' => false,
+          'fields'     => 'id=>name', // [ID => 'Cайт/Сладкое']
+      ]);
+
+      if (!is_wp_error($all_categories)) {
+          $cached_categories = $all_categories;
+          error_log("MySklad: Кеш категорий инициализирован, загружено " . count($cached_categories) . " категорий.");
+      } else {
+          $cached_categories = [];
+          error_log("MySklad: Ошибка загрузки категорий: " . $all_categories->get_error_message());
+      }
+  }
+
+  // Ищем ID категории WooCommerce по полному пути
+  $category_id = array_search($full_category_path, $cached_categories);
+
+  if ($category_id === false) {
+      error_log("MySklad: Категория '{$full_category_path}' не найдена в WooCommerce для товара ID: {$product_id}. Товар скрыт.");
+      $product->set_status('draft');
+      $product->save();
+      return;
+  }
+
+  // Проверяем, есть ли уже закешированное значение ACF для этой категории
+  if (!isset($cached_acf_categories[$category_id])) {
+      $allowed_subcats_raw = get_field('p_my_sklad_categories', 'product_cat_' . $category_id);
+
+      if (empty($allowed_subcats_raw)) {
+          // Кешируем как null или пустой массив — fallback будет использован
+          $cached_acf_categories[$category_id] = [];
+          error_log("MySklad: У категории '{$full_category_path}' (ID: {$category_id}) не заполнено поле p_my_sklad_categories — будет использован fallback.");
+      } else {
+          // Парсим и кешируем
+          $cached_acf_categories[$category_id] = array_map('trim', explode(';', $allowed_subcats_raw));
+          error_log("MySklad: Закешированы разрешённые подкатегории для категории ID {$category_id}: " . implode(', ', $cached_acf_categories[$category_id]));
+      }
+  }
+
+  $allowed_subcats = $cached_acf_categories[$category_id];
+
+  $is_allowed = false;
+
+  // 1. Проверяем ACF-фильтр, если он не пустой
+  if (!empty($allowed_subcats)) {
+      if (in_array($category_name, $allowed_subcats)) {
+          $is_allowed = true;
+          error_log("MySklad: Товар ID: {$product_id} разрешён через ACF-фильтр — '{$category_name}' найдена в списке.");
+      } else {
+          error_log("MySklad: Товар ID: {$product_id} — '{$category_name}' не найдена в ACF-списке: " . implode(', ', $allowed_subcats));
+      }
+  }
+
+  // 2. Если не разрешено через ACF — применяем fallback: совпадает ли $category_name с именем категории (последняя часть)
+  if (!$is_allowed) {
+      // Имя категории в WooCommerce — "Cайт/Сладкое" → последняя часть: "Сладкое"
+      $category_display_name = trim(end(explode('/', $full_category_path)));
+
+      if ($category_name === $category_display_name) {
+          $is_allowed = true;
+          error_log("MySklad: Товар ID: {$product_id} разрешён через fallback — совпадение с именем категории '{$category_display_name}'.");
+      } else {
+          error_log("MySklad: Fallback не сработал — '{$category_name}' не совпадает с именем категории '{$category_display_name}'.");
+      }
+  }
+
+  // Применяем результат
+  if ($is_allowed) {
+      wp_set_object_terms($product_id, (int)$category_id, 'product_cat');
+      $product->set_status('publish');
+      error_log("MySklad: Товар ID: {$product_id} опубликован.");
+  } else {
+      $product->set_status('draft');
+      error_log("MySklad: Товар ID: {$product_id} скрыт — не прошёл ни ACF-фильтр, ни fallback.");
+  }
+
+
   // === 7. Загружаем изображения (если есть) ===
   $token = get_option('p_my_sklad_access_token');
   $attachment_ids = [];
@@ -216,7 +317,7 @@ function p_my_sklad_import_single_product($ms_product)
       $uom_name = p_my_sklad_fetch_uom_name($ms_product['uom']['meta']['href'], $token);
       if (!empty($uom_name)) {
         update_post_meta($product_id, '_oh_product_unit_name', $uom_name);
-        error_log("MySklad: Установлена единица измерения: {$uom_name} для товара ID: {$product_id}");
+        // error_log("MySklad: Установлена единица измерения: {$uom_name} для товара ID: {$product_id}");
       }
     }
   }
@@ -227,9 +328,9 @@ function p_my_sklad_import_single_product($ms_product)
     update_post_meta($product_id, 'p_my_sklad_code', $ms_code);
     update_post_meta($product_id, 'p_my_sklad_updated_at', current_time('mysql'));
 
-    error_log("MySklad: Товар '{$name}' (код: {$ms_code}) успешно " . ($product_id == $product->get_id() ? 'обновлён' : 'создан') . ". ID: {$product_id}");
+    // error_log("MySklad: Товар '{$name}' (код: {$ms_code}) успешно " . ($product_id == $product->get_id() ? 'обновлён' : 'создан') . ". ID: {$product_id}");
   } else {
-    error_log("MySklad: Ошибка сохранения товара '{$name}' (код: {$ms_code})");
+    // error_log("MySklad: Ошибка сохранения товара '{$name}' (код: {$ms_code})");
   }
 }
 
@@ -249,7 +350,7 @@ function p_my_sklad_fetch_product_images($product_href, $token)
   ]);
 
   if (is_wp_error($response)) {
-    error_log("MySklad: Ошибка получения изображений для {$product_href}: " . $response->get_error_message());
+    // error_log("MySklad: Ошибка получения изображений для {$product_href}: " . $response->get_error_message());
     return [];
   }
 
@@ -293,7 +394,7 @@ function p_my_sklad_download_and_attach_image($download_url, $filename, $product
   // Проверяем, не загружали ли мы уже это изображение
   $existing_attachment = p_my_sklad_find_attachment_by_source_url($download_url);
   if ($existing_attachment) {
-    error_log("MySklad: Изображение уже загружено: {$download_url} (ID: {$existing_attachment})");
+    // error_log("MySklad: Изображение уже загружено: {$download_url} (ID: {$existing_attachment})");
     return $existing_attachment;
   }
 
@@ -308,29 +409,29 @@ function p_my_sklad_download_and_attach_image($download_url, $filename, $product
   ]);
 
   if (is_wp_error($response)) {
-    error_log("MySklad: Ошибка получения временной ссылки для {$download_url}: " . $response->get_error_message());
+    // error_log("MySklad: Ошибка получения временной ссылки для {$download_url}: " . $response->get_error_message());
     return 0;
   }
 
   $code = wp_remote_retrieve_response_code($response);
   if ($code !== 302) {
-    error_log("MySklad: Ожидался редирект 302, получен код {$code} для {$download_url}");
+    // error_log("MySklad: Ожидался редирект 302, получен код {$code} для {$download_url}");
     return 0;
   }
 
   $headers = wp_remote_retrieve_headers($response);
   if (empty($headers['location'])) {
-    error_log("MySklad: Заголовок Location отсутствует для {$download_url}");
+    // error_log("MySklad: Заголовок Location отсутствует для {$download_url}");
     return 0;
   }
 
   $temporary_url = $headers['location'];
-  error_log("MySklad: Получена временная ссылка: {$temporary_url}");
+  // error_log("MySklad: Получена временная ссылка: {$temporary_url}");
 
   // === ШАГ 2: Скачиваем файл по временной ссылке (без авторизации) ===
   $tmp_file = download_url($temporary_url);
   if (is_wp_error($tmp_file)) {
-    error_log("MySklad: Ошибка скачивания изображения по временной ссылке {$temporary_url}: " . $tmp_file->get_error_message());
+    // error_log("MySklad: Ошибка скачивания изображения по временной ссылке {$temporary_url}: " . $tmp_file->get_error_message());
     return 0;
   }
 
@@ -342,7 +443,7 @@ function p_my_sklad_download_and_attach_image($download_url, $filename, $product
 
   $attachment_id = media_handle_sideload($file_array, $product_id);
   if (is_wp_error($attachment_id)) {
-    error_log("MySklad: Ошибка загрузки изображения в медиатеку: " . $attachment_id->get_error_message());
+    // error_log("MySklad: Ошибка загрузки изображения в медиатеку: " . $attachment_id->get_error_message());
     @unlink($tmp_file);
     return 0;
   }
@@ -350,7 +451,7 @@ function p_my_sklad_download_and_attach_image($download_url, $filename, $product
   // Сохраняем исходный URL (downloadHref), чтобы не скачивать повторно
   update_post_meta($attachment_id, '_p_my_sklad_image_source_url', $download_url);
 
-  error_log("MySklad: Изображение загружено через временную ссылку: {$download_url} (ID: {$attachment_id})");
+  // error_log("MySklad: Изображение загружено через временную ссылку: {$download_url} (ID: {$attachment_id})");
   return $attachment_id;
 }
 
@@ -376,13 +477,13 @@ function p_my_sklad_fetch_uom_name($uom_href, $token)
   ]);
 
   if (is_wp_error($response)) {
-    error_log("MySklad: Ошибка получения единицы измерения: " . $response->get_error_message());
+    // error_log("MySklad: Ошибка получения единицы измерения: " . $response->get_error_message());
     return '';
   }
 
   $code = wp_remote_retrieve_response_code($response);
   if ($code !== 200) {
-    error_log("MySklad: Ошибка HTTP {$code} при получении единицы измерения: {$uom_href}");
+    // error_log("MySklad: Ошибка HTTP {$code} при получении единицы измерения: {$uom_href}");
     return '';
   }
 

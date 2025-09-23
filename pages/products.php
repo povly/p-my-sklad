@@ -278,10 +278,6 @@ function p_my_sklad_run_sync_batch()
     // 🔽 Здесь вызывай свою функцию импорта
     p_my_sklad_import_single_product($product);
 
-    // Для теста — просто логируем
-    error_log("Импортирован товар: " . ($product['name'] ?? 'N/A'));
-
-
     $progress['processed']++;
 
     $progress['message'] = "Обработано {$progress['processed']} из " . ($progress['total'] ?: '?') . "...";
