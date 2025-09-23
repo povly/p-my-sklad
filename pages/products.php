@@ -227,21 +227,24 @@ function p_my_sklad_run_sync_batch()
   ]);
 
   if ($progress['status'] !== 'in_progress') {
-    p_my_sklad_log()->debug('Синхронизация прервана: статус не "in_progress"', ['current_status' => $progress['status']]);
+    p_my_sklad_log()->debug('Синхронизация прервана: статус не "in_progress"', [
+      'current_status' => $progress['status']
+    ]);
     return;
   }
 
   p_my_sklad_log()->debug('Запущен следующий батч синхронизации', [
     'batch_start' => $progress['processed'],
-    'nextHref' => $progress['nextHref']
+    'nextHref'    => $progress['nextHref']
   ]);
 
   $token = get_option('p_my_sklad_access_token');
   if (!$token) {
-    update_option('p_my_sklad_products_sync_progress', array_merge($progress, [
+    $new_progress = array_merge($progress, [
       'status'  => 'error',
       'message' => '❌ Токен не найден.'
-    ]));
+    ]);
+    update_option('p_my_sklad_products_sync_progress', $new_progress);
     p_my_sklad_log()->error('Синхронизация остановлена: отсутствует access token');
     return;
   }
@@ -249,13 +252,12 @@ function p_my_sklad_run_sync_batch()
   $settings = get_option('p_my_sklad_settings_products', []);
   $batch_size = !empty($settings['products_limit']) ? (int)$settings['products_limit'] : 200;
 
-  $url = $progress['nextHref'] ?: add_query_arg(
-    ['limit' => $batch_size],
-    'https://api.moysklad.ru/api/remap/1.2/entity/assortment'
-  );
+  // 🔥 Исправление: лишние пробелы в URL — могут вызвать ошибку 400
+  $base_url = 'https://api.moysklad.ru/api/remap/1.2/entity/assortment';
+  $url = $progress['nextHref'] ?: add_query_arg(['limit' => $batch_size], $base_url);
 
   p_my_sklad_log()->debug('Выполняется запрос к API МойСклад', [
-    'url' => $url,
+    'url'        => $url,
     'batch_size' => $batch_size
   ]);
 
@@ -267,31 +269,72 @@ function p_my_sklad_run_sync_batch()
     'timeout' => 30,
   ]);
 
+  // 🚨 Логируем WP_Error как объект — логгер сам его распакует
   if (is_wp_error($response)) {
-    $error_msg = $response->get_error_message();
-    update_option('p_my_sklad_products_sync_progress', array_merge($progress, [
+    $new_progress = array_merge($progress, [
       'status'  => 'error',
-      'message' => '❌ Ошибка API: ' . $error_msg
-    ]));
-    p_my_sklad_log()->error('Ошибка при запросе к API МойСклад', [
-      'error' => $error_msg,
-      'url' => $url
+      'message' => '❌ Ошибка API: ' . $response->get_error_message()
+    ]);
+    update_option('p_my_sklad_products_sync_progress', $new_progress);
+    p_my_sklad_log()->error('Ошибка при запросе к API МойСклад (WP_Error)', $response); // ← Передаем объект!
+    return;
+  }
+
+  // 🚨 Проверяем HTTP-статус
+  $response_code = wp_remote_retrieve_response_code($response);
+  if ($response_code !== 200) {
+    $response_body = wp_remote_retrieve_body($response);
+    $response_headers = wp_remote_retrieve_headers($response);
+
+    $new_progress = array_merge($progress, [
+      'status'  => 'error',
+      'message' => "❌ HTTP ошибка: {$response_code}"
+    ]);
+    update_option('p_my_sklad_products_sync_progress', $new_progress);
+
+    p_my_sklad_log()->error('HTTP ошибка при запросе к API МойСклад', [
+      'status_code'     => $response_code,
+      'response_body'   => $response_body,
+      'response_headers' => (array) $response_headers,
+      'url'             => $url,
     ]);
     return;
   }
 
   $body = wp_remote_retrieve_body($response);
-  $data = json_decode($body, true);
 
-  if (empty($data) || !isset($data['rows'])) {
-    update_option('p_my_sklad_products_sync_progress', array_merge($progress, [
+  // 🚨 Пытаемся декодировать JSON, логируем ошибку если не удалось
+  $data = json_decode($body, true);
+  if (json_last_error() !== JSON_ERROR_NONE) {
+    $new_progress = array_merge($progress, [
       'status'  => 'error',
-      'message' => '❌ Неверный ответ от API.'
-    ]));
-    p_my_sklad_log()->error('API вернул пустой или некорректный ответ');
+      'message' => '❌ Ошибка декодирования JSON: ' . json_last_error_msg()
+    ]);
+    update_option('p_my_sklad_products_sync_progress', $new_progress);
+
+    p_my_sklad_log()->error('Ошибка декодирования JSON от API МойСклад', [
+      'json_error' => json_last_error_msg(),
+      'raw_body'   => $body,
+      'url'        => $url,
+    ]);
     return;
   }
 
+  if (empty($data) || !isset($data['rows'])) {
+    $new_progress = array_merge($progress, [
+      'status'  => 'error',
+      'message' => '❌ Неверный ответ от API: отсутствует rows.'
+    ]);
+    update_option('p_my_sklad_products_sync_progress', $new_progress);
+
+    p_my_sklad_log()->error('API вернул пустой или некорректный ответ', [
+      'received_data' => $data, // ← Теперь логгер сам сериализует это в JSON/print_r
+      'url'           => $url,
+    ]);
+    return;
+  }
+
+  // 📊 Устанавливаем общее количество, если еще не установлено
   if ($progress['total'] == 0 && isset($data['meta']['size'])) {
     $progress['total'] = (int)$data['meta']['size'];
     p_my_sklad_log()->info('Установлено общее количество товаров для синхронизации', [
@@ -299,17 +342,25 @@ function p_my_sklad_run_sync_batch()
     ]);
   }
 
+  // 🔄 Обрабатываем товары
   foreach ($data['rows'] as $product) {
     $ms_code = $product['code'] ?? 'N/A';
     $name = $product['name'] ?? 'Без названия';
 
     p_my_sklad_log()->debug("Начата обработка товара", [
       'ms_code' => $ms_code,
-      'name' => $name,
-      'type' => $product['type'] ?? 'unknown'
+      'name'    => $name,
+      'type'    => $product['type'] ?? 'unknown',
+      'id'      => $product['id'] ?? 'unknown',
     ]);
 
-    p_my_sklad_import_single_product($product);
+    // Можно также логировать ошибки внутри импорта, если p_my_sklad_import_single_product возвращает WP_Error
+    $result = p_my_sklad_import_single_product($product);
+
+    // Если функция возвращает WP_Error — логируем
+    if (is_wp_error($result)) {
+      p_my_sklad_log()->error("Ошибка при импорте товара {$ms_code}", $result);
+    }
 
     $progress['processed']++;
     $progress['message'] = "Обработано {$progress['processed']} из " . ($progress['total'] ?: '?') . "...";
@@ -320,6 +371,7 @@ function p_my_sklad_run_sync_batch()
 
   sleep(3);
 
+  // 🔄 Планируем следующий батч или завершаем
   if (!empty($data['meta']['nextHref'])) {
     $progress['nextHref'] = $data['meta']['nextHref'];
     update_option('p_my_sklad_products_sync_progress', $progress);
@@ -328,7 +380,7 @@ function p_my_sklad_run_sync_batch()
       wp_schedule_single_event(time() + 1, 'p_my_sklad_run_sync_batch');
       p_my_sklad_log()->debug('Запланирован следующий батч синхронизации', [
         'next_processed' => $progress['processed'],
-        'remaining' => ($progress['total'] - $progress['processed'])
+        'remaining'      => ($progress['total'] - $progress['processed'])
       ]);
     }
   } else {
@@ -337,7 +389,8 @@ function p_my_sklad_run_sync_batch()
     delete_option('p_my_sklad_products_sync_progress');
 
     p_my_sklad_log()->info('Синхронизация завершена успешно', [
-      'total_imported' => $progress['processed']
+      'total_imported' => $progress['processed'],
+      'duration_sec'   => round(microtime(true) - $_SERVER['REQUEST_TIME_FLOAT'], 2) ?? 'unknown',
     ]);
   }
 }
@@ -349,23 +402,56 @@ add_action('p_my_sklad_cron_sync_products', 'p_my_sklad_cron_sync_products_handl
 
 function p_my_sklad_cron_sync_products_handler()
 {
-  wp_clear_scheduled_hook('p_my_sklad_run_sync_batch');
+  // Получаем текущий прогресс
+  $progress = get_option('p_my_sklad_products_sync_progress', [
+    'status' => 'idle',
+  ]);
+
+  // 🔒 Проверка: если уже запущена — не дублируем
+  if ($progress['status'] === 'in_progress') {
+    p_my_sklad_log()->info('Cron: Синхронизация уже запущена, пропускаем дубль', [
+      'current_status' => $progress['status'],
+      'processed'      => $progress['processed'] ?? 0,
+      'total'          => $progress['total'] ?? 0,
+      'event'          => 'p_my_sklad_cron_sync_products',
+      'action'         => 'skipped_duplicate'
+    ]);
+    return;
+  }
+
+  // 🧹 Очищаем старые события и прогресс
+  $unscheduled = wp_clear_scheduled_hook('p_my_sklad_run_sync_batch');
   delete_option('p_my_sklad_products_sync_progress');
 
+  p_my_sklad_log()->debug('Cron: Очистка старых задач и прогресса', [
+    'unscheduled_events_count' => $unscheduled,
+    'event'                    => 'p_my_sklad_cron_sync_products'
+  ]);
+
+  // 🚀 Устанавливаем начальное состояние
   $initial_state = [
     'status'    => 'in_progress',
     'processed' => 0,
     'total'     => 0,
     'nextHref'  => null,
     'message'   => 'Запущено cron-заданием (полная синхронизация)...',
+    'started_at' => current_time('mysql'),
   ];
 
   update_option('p_my_sklad_products_sync_progress', $initial_state);
 
-  wp_schedule_single_event(time() + 1, 'p_my_sklad_run_sync_batch');
-
-  p_my_sklad_log()->info('Cron: Запущена автоматическая синхронизация товаров', [
-    'event' => 'p_my_sklad_cron_sync_products',
-    'action' => 'scheduled_first_batch'
-  ]);
+  // 📅 Запускаем первый батч через 1 секунду
+  if (!wp_next_scheduled('p_my_sklad_run_sync_batch')) {
+    wp_schedule_single_event(time() + 1, 'p_my_sklad_run_sync_batch');
+    p_my_sklad_log()->info('Cron: Запущена автоматическая синхронизация товаров', [
+      'event'  => 'p_my_sklad_cron_sync_products',
+      'action' => 'scheduled_first_batch',
+      'time'   => date('Y-m-d H:i:s'),
+    ]);
+  } else {
+    p_my_sklad_log()->warning('Cron: Задача p_my_sklad_run_sync_batch уже запланирована', [
+      'event'  => 'p_my_sklad_cron_sync_products',
+      'action' => 'batch_already_scheduled',
+    ]);
+  }
 }
