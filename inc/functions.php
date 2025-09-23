@@ -115,6 +115,7 @@ function p_my_sklad_import_single_product($ms_product)
   // === 3. Ищем товар в WooCommerce по мета-полю ===
   $args = [
     'post_type'  => 'product',
+    'post_status' => 'any',
     'meta_query' => [
       [
         'key'   => 'p_my_sklad_code',
