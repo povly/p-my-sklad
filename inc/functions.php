@@ -144,6 +144,7 @@ function p_my_sklad_import_single_product($ms_product)
 
   $product->set_name($name);
   $product->set_description($description);
+  
   $product->set_short_description($description);
   $product->set_stock_quantity($quantity);
   $product->set_manage_stock(true);

@@ -101,7 +101,7 @@ function p_my_sklad_render_subpage_product()
 
               // 🔎 Проверяем, запланирована ли задача в cron
               $.post(ajaxurl, {
-                action: 'p_my_sklad_check_cron_active',
+                action: 'p_my_sklad_product_check_cron_active',
                 nonce: '<?php echo wp_create_nonce("p_my_sklad_products_check_sync_nonce"); ?>'
               }, function(cronRes) {
                 if (cronRes.success && cronRes.data.is_scheduled) {
@@ -110,7 +110,7 @@ function p_my_sklad_render_subpage_product()
                   startPolling();
                 } else {
                   // ❌ Задача НЕ запланирована → значит, остановлена или удалена
-                  const errorMsg = 'Синхронизация была прервана или удалена из cron.';
+                  const errorMsg = 'Синхронизация была прервана или удалена из cron. Перезапустите';
                   $message.css('color', 'red').text(errorMsg);
                   $bar.css('background', '#f44336');
                   $submitButton.prop('disabled', false).val('Запустить снова');
