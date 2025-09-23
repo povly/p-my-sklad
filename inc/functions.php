@@ -95,52 +95,66 @@ function p_my_sklad_get_assortments()
  */
 function p_my_sklad_import_single_product($ms_product)
 {
-  // === 1. Проверяем фильтр категории ===
+  $ms_code = $ms_product['code'] ?? '';
+  $name = $ms_product['name'] ?? 'Без названия';
+
+  if (empty($ms_code)) {
+    p_my_sklad_log()->debug('Пропущен товар без кода', ['name' => $name]);
+    return;
+  }
+
+  p_my_sklad_log()->debug("Импорт товара начат", [
+    'ms_code' => $ms_code,
+    'name' => $name
+  ]);
+
+  // === Фильтр категории ===
   $settings = get_option('p_my_sklad_settings_products', []);
   $filter_path = trim($settings['categories_filters'] ?? '');
   $product_path = $ms_product['pathName'] ?? '';
 
   if (!empty($filter_path)) {
     if (strpos($product_path, $filter_path) !== 0) {
-      return; // Пропускаем, если не начинается с указанного пути
+      p_my_sklad_log()->debug('Товар не прошёл фильтр категории', [
+        'filter_path' => $filter_path,
+        'product_path' => $product_path,
+        'action' => 'skipped'
+      ]);
+      return;
+    } else {
+      p_my_sklad_log()->debug('Товар прошёл фильтр категории', [
+        'filter_path' => $filter_path,
+        'product_path' => $product_path
+      ]);
     }
   }
 
-  // === 2. Получаем код товара из МойСклад ===
-  $ms_code = $ms_product['code'] ?? '';
-  if (empty($ms_code)) {
-    return;
-  }
-
-  // === 3. Ищем товар в WooCommerce по мета-полю ===
+  // Поиск существующего товара
   $args = [
     'post_type'  => 'product',
     'post_status' => ['publish', 'draft'],
-    'meta_query' => [
-      [
-        'key'   => 'p_my_sklad_code',
-        'value' => $ms_code,
-      ],
-    ],
+    'meta_query' => [[
+      'key'   => 'p_my_sklad_code',
+      'value' => $ms_code,
+    ]],
     'posts_per_page' => 1,
   ];
 
   $query = new WP_Query($args);
-  $product_id = 0;
+  $product_id = $query->have_posts() ? $query->posts[0]->ID : 0;
+  $action = $product_id ? 'update' : 'create';
 
-  if ($query->have_posts()) {
-    $query->the_post();
-    $product_id = get_the_ID();
-    wc_setup_product_data($product_id);
-  }
+  p_my_sklad_log()->debug("Определён тип операции с товаром", [
+    'action' => $action,
+    'product_id' => $product_id,
+    'ms_code' => $ms_code
+  ]);
 
-  // === 4. Создаём или получаем объект товара ===
   $product = $product_id ? wc_get_product($product_id) : new WC_Product();
 
-  // === 5. Заполняем основные поля ===
-  $name = $ms_product['name'] ?? 'Без названия';
+  // === Основные поля ===
   $description = $ms_product['description'] ?? '';
-  $quantity = isset($ms_product['quantity']) ? (float) $ms_product['quantity'] : 0;
+  $quantity = isset($ms_product['quantity']) ? (float)$ms_product['quantity'] : 0;
 
   $product->set_name($name);
   $product->set_description($description);
@@ -149,7 +163,14 @@ function p_my_sklad_import_single_product($ms_product)
   $product->set_manage_stock(true);
   $product->set_stock_status($quantity > 0 ? 'instock' : 'outofstock');
 
-  // === 6. Устанавливаем цены из salePrices ===
+  p_my_sklad_log()->debug('Основные данные установлены', [
+    'name' => $name,
+    'description_length' => strlen($description),
+    'stock_quantity' => $quantity,
+    'stock_status' => $quantity > 0 ? 'instock' : 'outofstock'
+  ]);
+
+  // === Цены ===
   $regular_price = 0;
   $sale_price = 0;
 
@@ -159,7 +180,7 @@ function p_my_sklad_import_single_product($ms_product)
         continue;
       }
 
-      $value = (float) $sale_price_item['value'] / 100; // Делим на 100 → рубли
+      $value = (float)$sale_price_item['value'] / 100;
       $price_type_name = $sale_price_item['priceType']['name'];
 
       if ($price_type_name === 'Цена продажи') {
@@ -171,24 +192,29 @@ function p_my_sklad_import_single_product($ms_product)
   }
 
   $product->set_regular_price($regular_price);
-
   if ($sale_price > 0 && $sale_price < $regular_price) {
     $product->set_sale_price($sale_price);
   } else {
     $product->set_sale_price('');
   }
-
   $product->set_price($sale_price > 0 ? $sale_price : $regular_price);
 
-  // Сохраняем товар, чтобы получить ID, если создавали новый
+  p_my_sklad_log()->debug('Цены установлены', [
+    'regular_price' => $regular_price,
+    'sale_price' => $sale_price
+  ]);
+
   $product_id = $product->save();
-  // error_log('Товар: ' . $product->get_name() . ' ID: ' . $product_id);
 
-  // === 6.5. Проверка категории товара через ACF-фильтр p_my_sklad_categories или fallback по имени ===
-  static $cached_categories = null;         // [category_id => full_name]
-  static $cached_acf_categories = null;     // [category_id => ['raw' => [...], 'normalized' => [...]] ]
+  p_my_sklad_log()->debug('Товар сохранён в базе', [
+    'wc_product_id' => $product_id,
+    'action' => $action
+  ]);
 
-  // Инициализируем кеши, если не созданы
+  // === Категории ===
+  static $cached_categories = null;
+  static $cached_acf_categories = null;
+
   if ($cached_categories === null) {
     $all_categories = get_terms([
       'taxonomy'   => 'product_cat',
@@ -205,101 +231,89 @@ function p_my_sklad_import_single_product($ms_product)
 
         $cached_categories[$term_id] = $full_name;
 
-        // Загружаем ACF-поле для категории
         $allowed_subcats_raw = '';
         if (function_exists('get_field')) {
           $allowed_subcats_raw = get_field('p_my_sklad_categories', 'product_cat_' . $term_id);
         }
 
         if (empty($allowed_subcats_raw)) {
-          $cached_acf_categories[$term_id] = [
-            'raw' => [],
-            'normalized' => []
-          ];
-          // error_log("MySklad: У категории '{$full_name}' (ID: {$term_id}) не заполнено поле p_my_sklad_categories — будет использован fallback по совпадению имени.");
+          $cached_acf_categories[$term_id] = ['raw' => [], 'normalized' => []];
         } else {
           $raw_list = array_map('trim', explode(';', $allowed_subcats_raw));
-          $normalized_list = array_map(function ($item) {
-            return mb_strtolower($item);
-          }, $raw_list);
-
-          $cached_acf_categories[$term_id] = [
-            'raw' => $raw_list,
-            'normalized' => $normalized_list
-          ];
-          // error_log("MySklad: Закешированы разрешённые подкатегории для категории ID {$term_id}: " . implode(', ', $raw_list));
+          $normalized_list = array_map('mb_strtolower', $raw_list);
+          $cached_acf_categories[$term_id] = ['raw' => $raw_list, 'normalized' => $normalized_list];
         }
       }
 
-      // error_log("MySklad: Кеш категорий и ACF-полей инициализирован, загружено " . count($cached_categories) . " категорий.");
+      p_my_sklad_log()->debug('Кеш категорий инициализирован', [
+        'total_categories' => count($cached_categories)
+      ]);
     } else {
+      p_my_sklad_log()->error('Ошибка загрузки категорий', [
+        'error' => $all_categories->get_error_message()
+      ]);
       $cached_categories = [];
       $cached_acf_categories = [];
-      // error_log("MySklad: Ошибка загрузки категорий: " . $all_categories->get_error_message());
     }
   }
 
-  // Получаем путь категории товара из МойСклад
-  if (empty($product_path)) {
-    $product_name = isset($ms_product['name']) ? $ms_product['name'] : 'N/A';
-    // error_log("MySklad: Товар '{$product_name}' (код: {$ms_code}) не имеет pathName — пропуск категории.");
-    $product->set_status('draft');
-    $product->save();
-    // Продолжаем — сохраняем мета и изображения, даже если черновик
-  }
-
-  // ← ИСПРАВЛЕНИЕ: Берём только последнюю часть пути и нормализуем
-  $parts = explode('/', $product_path);
-  $extracted_subcat_name = trim(end($parts)); // ← ВАЖНО: новая переменная, чтобы не перезаписывать!
-  $normalized_subcat = mb_strtolower($extracted_subcat_name);
-
-  // error_log("DEBUG: Исходный путь: '{$product_path}' → Извлечённая подкатегория: '{$extracted_subcat_name}' (нормализовано: '{$normalized_subcat}')");
-
   $category_id = false;
 
-  // Этап 1: Пробуем найти категорию WooCommerce с точно таким же именем (fallback)
-  if (!empty($extracted_subcat_name)) {
+  if (!empty($product_path)) {
+    $parts = explode('/', $product_path);
+    $extracted_subcat_name = trim(end($parts));
+    $normalized_subcat = mb_strtolower($extracted_subcat_name);
+
+    // Поиск по точному имени
     foreach ($cached_categories as $id => $full_name) {
       if (mb_strtolower(trim($full_name)) === $normalized_subcat) {
         $category_id = $id;
-        // error_log("MySklad: Найдено точное совпадение категории по имени: '{$extracted_subcat_name}' → ID: {$category_id}. Fallback применён.");
+        p_my_sklad_log()->debug('Найдена категория по совпадению имени', [
+          'matched_category' => $full_name,
+          'source' => 'fallback_by_name'
+        ]);
         break;
       }
     }
 
-    // Этап 2: Если не нашли — ищем категорию, в ACF которой разрешена эта подкатегория
+    // Поиск через ACF
     if ($category_id === false) {
       foreach ($cached_acf_categories as $id => $data) {
-        $normalized_list = $data['normalized'] ?? [];
-        if (in_array($normalized_subcat, $normalized_list)) {
+        if (in_array($normalized_subcat, $data['normalized'])) {
           $category_id = $id;
-          // error_log("MySklad: Подкатегория '{$extracted_subcat_name}' (нормализовано: '{$normalized_subcat}') разрешена в категории ID {$id} ('{$cached_categories[$id]}') через ACF-фильтр.");
+          p_my_sklad_log()->debug('Найдена категория через ACF-фильтр', [
+            'matched_category' => $cached_categories[$id],
+            'source' => 'acf_filter',
+            'allowed_values' => $data['raw']
+          ]);
           break;
         }
       }
     }
-  }
 
-  // Применяем результат
-  if ($category_id !== false) {
-    $result = wp_set_object_terms($product_id, (int)$category_id, 'product_cat');
-    if (is_wp_error($result)) {
-      // error_log("MySklad: Ошибка при назначении категории: " . $result->get_error_message());
+    if ($category_id !== false) {
+      wp_set_object_terms($product_id, (int)$category_id, 'product_cat');
+      $product->set_status('publish');
+      $product->save();
+      p_my_sklad_log()->debug('Категория назначена и товар опубликован', [
+        'category_id' => $category_id,
+        'category_name' => $cached_categories[$category_id]
+      ]);
+    } else {
+      $product->set_status('draft');
+      $product->save();
+      p_my_sklad_log()->debug('Категория не найдена — товар переведён в черновик', [
+        'missing_subcat' => $extracted_subcat_name,
+        'product_path' => $product_path
+      ]);
     }
-    $product->set_status('publish');
-    $product->save(); // ← Сохраняем статус и связи
-    // error_log("MySklad: Товар ID: {$product_id} опубликован в категории ID: {$category_id} ('{$cached_categories[$category_id]}').");
   } else {
-    $product->set_status('draft');
-    $product->save(); // ← И здесь тоже
-    // error_log("MySklad: Не найдена ни одна категория WooCommerce, разрешающая подкатегорию '{$extracted_subcat_name}' для товара ID: {$product_id}. Товар скрыт.");
+    p_my_sklad_log()->debug('У товара нет pathName — пропуск категорий', ['ms_code' => $ms_code]);
   }
 
-  // error_log("DEBUG: category_id = " . var_export($category_id, true) . ", type = " . gettype($category_id));
-
-  // === 7. Загружаем изображения (если есть) ===
-  $token = get_option('p_my_sklad_access_token');
+  // === Изображения ===
   $attachment_ids = [];
+  $token = get_option('p_my_sklad_access_token');
 
   if ($token && !empty($ms_product['images']['meta']['href'])) {
     $image_rows = p_my_sklad_fetch_product_images($ms_product['meta']['href'], $token);
@@ -312,6 +326,10 @@ function p_my_sklad_import_single_product($ms_product)
 
         if ($attachment_id) {
           $attachment_ids[] = $attachment_id;
+          p_my_sklad_log()->debug('Изображение загружено и привязано', [
+            'url' => $download_url,
+            'attachment_id' => $attachment_id
+          ]);
         }
       }
     }
@@ -319,29 +337,36 @@ function p_my_sklad_import_single_product($ms_product)
     if (!empty($attachment_ids)) {
       set_post_thumbnail($product_id, $attachment_ids[0]);
       $product->set_gallery_image_ids(array_slice($attachment_ids, 1));
+      p_my_sklad_log()->debug('Галерея изображений установлена', [
+        'featured_image' => $attachment_ids[0],
+        'gallery_count' => count($attachment_ids) - 1
+      ]);
     }
   }
 
-  // === 8. Устанавливаем единицу измерения ===
+  // === Единица измерения ===
   if (!empty($ms_product['uom']['meta']['href'])) {
-    $token = get_option('p_my_sklad_access_token');
-    if ($token) {
-      $uom_name = p_my_sklad_fetch_uom_name($ms_product['uom']['meta']['href'], $token);
-      if (!empty($uom_name)) {
-        update_post_meta($product_id, '_oh_product_unit_name', $uom_name);
-      }
+    $uom_name = p_my_sklad_fetch_uom_name($ms_product['uom']['meta']['href'], $token);
+    if (!empty($uom_name)) {
+      update_post_meta($product_id, '_oh_product_unit_name', $uom_name);
+      p_my_sklad_log()->debug('Единица измерения установлена', [
+        'uom' => $uom_name
+      ]);
     }
   }
 
-  // === 9. Сохраняем мета-поля с кодом МойСклад и временем обновления ===
+  // === Мета-поля ===
   update_post_meta($product_id, 'p_my_sklad_code', $ms_code);
   update_post_meta($product_id, 'p_my_sklad_updated_at', current_time('mysql'));
 
-  // Финальное сохранение товара (на случай, если менялся статус или галерея)
   $product->save();
 
-  // Раскомментируй, если нужно логировать успешное завершение
-  // error_log("MySklad: Товар '{$name}' (код: {$ms_code}) успешно " . ($product_id == $product->get_id() ? 'обновлён' : 'создан') . ". ID: {$product_id}");
+  p_my_sklad_log()->info('Товар успешно импортирован', [
+    'action' => $action,
+    'ms_code' => $ms_code,
+    'wc_product_id' => $product_id,
+    'name' => $name
+  ]);
 }
 
 /**
@@ -501,4 +526,9 @@ function p_my_sklad_fetch_uom_name($uom_href, $token)
   $data = json_decode($body, true);
 
   return $data['name'] ?? '';
+}
+
+function p_my_sklad_log()
+{
+  return P_MySklad_WC_Logger::instance();
 }

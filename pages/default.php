@@ -86,6 +86,8 @@ function p_my_sklad_handle_settings_form_submission()
     return;
   }
 
+  p_my_sklad_log()->info('Начата обработка формы настроек MySklad');
+
   // Проверка nonce
   if (!wp_verify_nonce($_POST['_wpnonce'] ?? '', 'p_my_sklad_token_nonce_settings')) {
     add_settings_error(
@@ -94,6 +96,7 @@ function p_my_sklad_handle_settings_form_submission()
       __('Недопустимый запрос. Попробуйте снова.', 'p-my-sklad'),
       'error'
     );
+    p_my_sklad_log()->error('Проверка nonce не пройдена при сохранении настроек');
     return;
   }
 
@@ -102,24 +105,31 @@ function p_my_sklad_handle_settings_form_submission()
   // Санитизация данных — ОБЯЗАТЕЛЬНО!
   $sanitized_settings = [
     'categories_filters' => sanitize_text_field($settings['categories_filters'] ?? ''),
-    'products_limit'      => sanitize_text_field($settings['products_limit'] ?? ''),
-    'product_interval'      => sanitize_text_field($settings['product_interval'] ?? ''),
+    'products_limit'     => sanitize_text_field($settings['products_limit'] ?? ''),
+    'product_interval'   => sanitize_text_field($settings['product_interval'] ?? ''),
   ];
 
   update_option('p_my_sklad_settings_products', $sanitized_settings);
 
+  p_my_sklad_log()->info('Настройки синхронизации товаров сохранены', [
+    'categories_filter' => $sanitized_settings['categories_filters'],
+    'products_limit'    => $sanitized_settings['products_limit'],
+    'sync_interval'     => $sanitized_settings['product_interval']
+  ]);
+
   // === УПРАВЛЕНИЕ CRON ===
   $interval = $sanitized_settings['product_interval'];
 
-  // Сначала удаляем все запланированные задачи
   wp_clear_scheduled_hook('p_my_sklad_cron_sync_products');
+  p_my_sklad_log()->info('Очищены запланированные события p_my_sklad_cron_sync_products');
 
-  // Если интервал выбран — планируем новую задачу
   if (!empty($interval)) {
-    // Проверяем, существует ли такой интервал
     if (wp_get_schedule('p_my_sklad_cron_sync_products') !== $interval) {
       wp_schedule_event(time(), $interval, 'p_my_sklad_cron_sync_products');
+      p_my_sklad_log()->info("Запланирован cron-запуск синхронизации", ['interval' => $interval]);
     }
+  } else {
+    p_my_sklad_log()->info('Интервал синхронизации не задан — cron не планируется');
   }
 
   // Уведомление об успешном сохранении
@@ -129,6 +139,8 @@ function p_my_sklad_handle_settings_form_submission()
     __('Настройки синхронизации товаров успешно сохранены.', 'p-my-sklad'),
     'updated'
   );
+
+  p_my_sklad_log()->info('Форма настроек успешно обработана и сохранена');
 }
 
 /**
