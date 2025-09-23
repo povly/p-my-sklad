@@ -181,7 +181,7 @@ function p_my_sklad_import_single_product($ms_product)
 
   // Сохраняем товар, чтобы получить ID, если создавали новый
   $product_id = $product->save();
-  error_log('Товар: ' . $product->get_name() . ' ID: ' . $product_id);
+  // error_log('Товар: ' . $product->get_name() . ' ID: ' . $product_id);
 
   // === 6.5. Проверка категории товара через ACF-фильтр p_my_sklad_categories или fallback по имени ===
   static $cached_categories = null;         // [category_id => full_name]
@@ -238,18 +238,6 @@ function p_my_sklad_import_single_product($ms_product)
     }
   }
 
-  // // ============ ОТЛАДКА: ПОЛНЫЙ СПИСОК КАТЕГОРИЙ И ИХ ACF-ЗНАЧЕНИЙ ============
-  // // error_log("=== ОТЛАДКА: ПОЛНЫЙ СПИСОК КАТЕГОРИЙ WOOCOMMERCE ===");
-  // foreach ($cached_categories as $id => $name) {
-  //   $acf_data = $cached_acf_categories[$id] ?? ['raw' => [], 'normalized' => []];
-  //   $raw_values = implode("', '", $acf_data['raw'] ?? []);
-  //   $normalized_values = implode("', '", $acf_data['normalized'] ?? []);
-
-  //   // error_log("ID: {$id} | Название: '{$name}' | ACF (сырые): ['{$raw_values}'] | ACF (нормализованные): ['{$normalized_values}']");
-  // }
-  // // error_log("=== КОНЕЦ СПИСКА КАТЕГОРИЙ ===");
-  // // ============ КОНЕЦ ОТЛАДКИ ============
-
   // Получаем путь категории товара из МойСклад
   if (empty($product_path)) {
     $product_name = isset($ms_product['name']) ? $ms_product['name'] : 'N/A';
@@ -273,7 +261,7 @@ function p_my_sklad_import_single_product($ms_product)
     foreach ($cached_categories as $id => $full_name) {
       if (mb_strtolower(trim($full_name)) === $normalized_subcat) {
         $category_id = $id;
-        // error_log("M: Найдено точное совпадение категории по имени: '{$extracted_subcat_name}' → ID: {$category_id}. Fallback применён.");
+        // error_log("MySklad: Найдено точное совпадение категории по имени: '{$extracted_subcat_name}' → ID: {$category_id}. Fallback применён.");
         break;
       }
     }
