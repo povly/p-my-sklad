@@ -181,37 +181,27 @@ function p_my_sklad_import_single_product($ms_product)
 
     // === Добавление описания в ACF repeater product_texts ===
     if ($product_id) {
-      $row_count = (int) get_post_meta($product_id, 'product_texts', true);
-      $new_index = $row_count;
-
-      $key_text_1 = "product_texts_{$new_index}_text_1";
-      $key_text_2 = "product_texts_{$new_index}_text_2";
+      $key_text_1 = "product_texts_0_text_1";
+      $key_text_2 = "product_texts_0_text_2";
       $field_name = 'product_texts';
 
       // Пытаемся использовать ACF, если доступно
       if (function_exists('update_field')) {
         $existing_rows = get_field('product_texts', $product_id) ?: [];
-        $existing_rows[] = [
-          'text_1' => 'Описание:',
-          'text_2' => $description,
+        $existing_rows = [
+          'text_1' => '',
+          'text_2' => '',
         ];
         update_field('product_texts', $existing_rows, $product_id);
-        p_my_sklad_log()->debug('Описание добавлено через ACF update_field', [
-          'product_id' => $product_id,
-          'total_rows' => count($existing_rows),
-        ]);
       } else {
         // Fallback: через update_post_meta
-        update_post_meta($product_id, $key_text_1, 'Описание:');
-        update_post_meta($product_id, $key_text_2, $description);
-        update_post_meta($product_id, $field_name, $new_index + 1);
+        update_post_meta($product_id, $key_text_1, '');
+        update_post_meta($product_id, $key_text_2, '');
+        update_post_meta($product_id, $field_name, 1);
 
         p_my_sklad_log()->debug('Описание добавлено в ACF repeater через update_post_meta', [
           'product_id' => $product_id,
-          'row_index' => $new_index,
-          'text_1' => 'Описание:',
-          'text_2_length' => strlen($description),
-          'total_rows_after' => $new_index + 1,
+          'row_index' => 1,
         ]);
       }
     }
