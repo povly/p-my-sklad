@@ -295,49 +295,52 @@ function p_my_sklad_import_single_product($ms_product)
       ]);
     }
 
-    $category_id = false;
+    $matching_category_ids = [];
 
     if (!empty($product_path)) {
       $parts = explode('/', $product_path);
       $extracted_subcat_name = trim(end($parts));
       $normalized_subcat = mb_strtolower($extracted_subcat_name);
 
-      // Поиск по точному имени
+      // Поиск по точному имени — ВСЕ совпадения
       foreach ($cached_categories as $id => $full_name) {
         if (mb_strtolower(trim($full_name)) === $normalized_subcat) {
-          $category_id = $id;
+          $matching_category_ids[] = (int)$id;
           p_my_sklad_log()->debug('Найдена категория по совпадению имени', [
             'matched_category' => $full_name,
+            'category_id' => $id,
             'source' => 'fallback_by_name'
           ]);
-          break;
         }
       }
 
-      // Поиск через ACF
-      if ($category_id === false) {
-        foreach ($cached_acf_categories as $id => $data) {
-          if (in_array($normalized_subcat, $data['normalized'])) {
-            $category_id = $id;
+      // Поиск через ACF — ВСЕ совпадения (избегаем дублей)
+      foreach ($cached_acf_categories as $id => $data) {
+        if (in_array($normalized_subcat, $data['normalized'])) {
+          $int_id = (int)$id;
+          if (!in_array($int_id, $matching_category_ids)) {
+            $matching_category_ids[] = $int_id;
             p_my_sklad_log()->debug('Найдена категория через ACF-фильтр', [
               'matched_category' => $cached_categories[$id],
+              'category_id' => $id,
               'source' => 'acf_filter',
               'allowed_values' => $data['raw']
             ]);
-            break;
           }
         }
       }
 
-      if ($category_id !== false) {
-        wp_set_object_terms($product_id, (int)$category_id, 'product_cat', true);
+      if (!empty($matching_category_ids)) {
+        // Добавляем ВСЕ найденные категории, не удаляя старые
+        wp_set_object_terms($product_id, $matching_category_ids, 'product_cat', true);
         $product->set_status('publish');
         $product->save();
-        p_my_sklad_log()->debug('Категория назначена и товар опубликован', [
-          'category_id' => $category_id,
-          'category_name' => $cached_categories[$category_id]
+        p_my_sklad_log()->debug('Найдено и добавлено категорий: ' . count($matching_category_ids), [
+          'category_ids' => $matching_category_ids,
+          'category_names' => array_intersect_key($cached_categories, array_flip($matching_category_ids))
         ]);
       } else {
+        // Ни одна категория не найдена
         $product->set_status('draft');
         $product->save();
         p_my_sklad_log()->debug('Категория не найдена — товар переведён в черновик', [
