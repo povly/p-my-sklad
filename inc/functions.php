@@ -330,7 +330,7 @@ function p_my_sklad_import_single_product($ms_product)
       }
 
       if ($category_id !== false) {
-        wp_set_object_terms($product_id, (int)$category_id, 'product_cat');
+        wp_set_object_terms($product_id, (int)$category_id, 'product_cat', true);
         $product->set_status('publish');
         $product->save();
         p_my_sklad_log()->debug('Категория назначена и товар опубликован', [
