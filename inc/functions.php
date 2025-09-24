@@ -100,6 +100,7 @@ function p_my_sklad_import_single_product($ms_product)
 {
   try {
     $ms_code = $ms_product['code'] ?? '';
+
     $name = $ms_product['name'] ?? 'Без названия';
 
     if (empty($ms_code)) {
@@ -171,6 +172,13 @@ function p_my_sklad_import_single_product($ms_product)
     $product->set_stock_quantity($quantity);
     $product->set_manage_stock(true);
     $product->set_stock_status($quantity > 0 ? 'instock' : 'outofstock');
+
+
+    // Внешний код
+    $externalCode = $ms_product['externalCode'] ?? '';
+    if (!empty($externalCode)) {
+      $product->set_sku($externalCode);
+    }
 
     p_my_sklad_log()->debug('Основные данные установлены', [
       'name' => $name,
