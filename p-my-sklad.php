@@ -1,5 +1,8 @@
 <?php
 
+use P_My_Sklad\Activator;
+use P_My_Sklad\Deactivator;
+
 /**
  * The plugin bootstrap file
  *
@@ -16,7 +19,7 @@
  * Plugin Name:       Мой Склад интеграция (Woo)
  * Plugin URI:        https://povly.ru
  * Description:       Интеграция Мой Склад с Woo
- * Version:           1.3.0
+ * Version:           1.3.1
  * Author:            Porshnyov Anatoly
  * Author URI:        https://povly.ru/
  * License:           GPL-2.0+
@@ -31,54 +34,35 @@ if ( ! defined( 'WPINC' ) ) {
 }
 
 /**
- * Currently plugin version.
- * Start at version 1.0.0 and use SemVer - https://semver.org
- * Rename this for your plugin and update it as you release new versions.
  */
-define( 'P_MY_SKLAD_VERSION', '1.3.0' );
-define('P_MY_SKLAD_DIR', plugin_dir_path(__FILE__));
-define('P_MY_SKLAD_BASE', plugin_basename(__FILE__));
+define('P_MY_SKLAD_VERSION', '1.3.1' );
+define('P_MY_SKLAD_FILE', __FILE__);
+define('P_MY_SKLAD_DIR', plugin_dir_path(P_MY_SKLAD_FILE));
+define('P_MY_SKLAD_BASE', plugin_basename(P_MY_SKLAD_FILE));
 
-/**
- * The code that runs during plugin activation.
- * This action is documented in includes/class-p_my_sklad-activator.php
- */
-function activate_p_my_sklad() {
-	require_once P_MY_SKLAD_DIR . 'includes/p_my_sklad-activator.php';
-	P_My_Sklad_Activator::activate();
+function activate() {
+	require_once P_MY_SKLAD_DIR . 'Classes/Activator.php';
+	Activator::activate();
 }
 
-/**
- * The code that runs during plugin deactivation.
- * This action is documented in includes/class-p_my_sklad-deactivator.php
- */
-function deactivate_p_my_sklad() {
-	require_once P_MY_SKLAD_DIR . 'includes/p_my_sklad-deactivator.php';
-	P_My_Sklad_Deactivator::deactivate();
+
+function deactivate() {
+	require_once P_MY_SKLAD_DIR . 'Classes/Deactivator.php';
+	Deactivator::deactivate();
 }
 
-register_activation_hook( __FILE__, 'activate_p_my_sklad' );
-register_deactivation_hook( __FILE__, 'deactivate_p_my_sklad' );
+register_activation_hook(P_MY_SKLAD_FILE, 'activate' );
+register_deactivation_hook(P_MY_SKLAD_FILE, 'deactivate' );
+
+require P_MY_SKLAD_DIR . 'Classes/P_My_Sklad.php';
 
 /**
- * The core plugin class that is used to define internationalization,
- * admin-specific hooks, and public-facing site hooks.
- */
-require P_MY_SKLAD_DIR . 'includes/p_my_sklad.php';
-
-/**
- * Begins execution of the plugin.
- *
- * Since everything within the plugin is registered via hooks,
- * then kicking off the plugin from this point in the file does
- * not affect the page life cycle.
- *
  * @since    1.0.0
  */
-function run_p_my_sklad() {
+function run() {
 
 	$plugin = new P_My_Sklad();
 	$plugin->run();
 
 }
-run_p_my_sklad();
+run();

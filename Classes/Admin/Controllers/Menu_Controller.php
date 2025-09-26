@@ -2,15 +2,18 @@
 
 /**
  * @package    P_My_Sklad
- * @subpackage P_My_Sklad/admin_menu_controller
- * @author     Porshnyov Anatoly <povly19995@gmail.com>
  */
-class P_My_Sklad_Admin_Menu_Controller extends P_My_Sklad_Admin_Base_Controller
+
+namespace P_My_Sklad\Admin\Controllers;
+
+use PMySklad\Admin\Api\WC_Logger;
+
+class Menu_Controller extends Base_Controller
 {
 
   public function render_page_main()
   {
-    $this->render_template('menu/settings-page.php', [
+    $this->render_template('page/settings-main.php', [
       'settings' => get_option('p_my_sklad_settings_products', []),
       'auth' => get_option('p_my_sklad_auth', []),
       'slug' => 'p_my_sklad',
@@ -81,7 +84,7 @@ class P_My_Sklad_Admin_Menu_Controller extends P_My_Sklad_Admin_Base_Controller
   }
 
   public function handle_page_main_settings(){
-    $logger = P_My_Sklad_WC_Logger::getInstance();
+    $logger = WC_Logger::getInstance();
 
     // Проверяем, что это наша форма
     if (!isset($_POST['p_my_sklad_save_settings']) || !current_user_can('manage_options')) {
