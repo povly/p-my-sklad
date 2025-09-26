@@ -156,7 +156,7 @@ function p_my_sklad_import_single_product($ms_product)
       'ms_code' => $ms_code
     ]);
 
-    $product = $product_id ? wc_get_product($product_id) : new WC_Product();
+    $product = $product_id ? wc_get_product($product_id) : 0;
 
     if (!$product) {
       throw new Exception("Не удалось создать/получить объект WC_Product для ID: {$product_id}");
