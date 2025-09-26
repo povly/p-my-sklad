@@ -22,7 +22,7 @@
  * @link       https://povly.ru
  * @since      1.0.0
  *
- * @package    P_my_sklad
+ * @package    P_My_Sklad
  */
 
 // If uninstall not called from WordPress, then exit.
