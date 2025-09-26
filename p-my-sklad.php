@@ -16,7 +16,7 @@
  * Plugin Name:       Мой Склад интеграция (Woo)
  * Plugin URI:        https://povly.ru
  * Description:       Интеграция Мой Склад с Woo
- * Version:           1.0.0
+ * Version:           1.2.0
  * Author:            Porshnyov Anatoly
  * Author URI:        https://povly.ru/
  * License:           GPL-2.0+
@@ -35,14 +35,15 @@ if ( ! defined( 'WPINC' ) ) {
  * Start at version 1.0.0 and use SemVer - https://semver.org
  * Rename this for your plugin and update it as you release new versions.
  */
-define( 'P_MY_SKLAD_VERSION', '1.0.0' );
+define( 'P_MY_SKLAD_VERSION', '1.2.0' );
+define('P_MY_SKLAD_DIR', plugin_dir_path(__FILE__));
 
 /**
  * The code that runs during plugin activation.
  * This action is documented in includes/class-p_my_sklad-activator.php
  */
 function activate_p_my_sklad() {
-	require_once plugin_dir_path( __FILE__ ) . 'includes/class-p_my_sklad-activator.php';
+	require_once P_MY_SKLAD_DIR . 'includes/p_my_sklad-activator.php';
 	P_My_Sklad_Activator::activate();
 }
 
@@ -51,7 +52,7 @@ function activate_p_my_sklad() {
  * This action is documented in includes/class-p_my_sklad-deactivator.php
  */
 function deactivate_p_my_sklad() {
-	require_once plugin_dir_path( __FILE__ ) . 'includes/class-p_my_sklad-deactivator.php';
+	require_once P_MY_SKLAD_DIR . 'includes/p_my_sklad-deactivator.php';
 	P_My_Sklad_Deactivator::deactivate();
 }
 
@@ -62,7 +63,7 @@ register_deactivation_hook( __FILE__, 'deactivate_p_my_sklad' );
  * The core plugin class that is used to define internationalization,
  * admin-specific hooks, and public-facing site hooks.
  */
-require plugin_dir_path( __FILE__ ) . 'includes/class-p_my_sklad.php';
+require P_MY_SKLAD_DIR . 'includes/p_my_sklad.php';
 
 /**
  * Begins execution of the plugin.

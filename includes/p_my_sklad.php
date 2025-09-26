@@ -56,9 +56,13 @@ class P_My_Sklad {
 	private function load_dependencies() {
 
 		$classes = [
-			'includes/class-p_my_sklad-loader.php',
-			'includes/class-p_my_sklad-i18n.php',
-			'admin/class-p_my_sklad-admin.php',
+			'includes/p_my_sklad-loader.php',
+			'includes/p_my_sklad-i18n.php',
+
+			'admin/p_my_sklad-admin.php',
+
+			'admin/includes/controllers/p_my_sklad-admin-menu-controller.php',
+			'admin/p_my_sklad-admin-menu.php',
 		];
 
 		foreach ($classes as $class) {
@@ -91,6 +95,22 @@ class P_My_Sklad {
 
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
+
+		$plugin_admin_menu = new P_My_Sklad_Admin_Menu();
+		$plugin_admin_menu_controller = new P_My_Sklad_Admin_Menu_Controller();
+
+		$plugin_admin_menu->add_page([
+			'title' => 'Мой Склад',
+			'menu_title' => 'Мой Склад',
+			'capability' => 'manage_options',
+			'menu_slug' => 'p-my-sklad',
+			'icon_url' => 'dashicons-cart',
+		], [$plugin_admin_menu_controller, 'render_page_main']);
+		$this->loader->add_action('admin_init', $plugin_admin_menu_controller, 'handle_page_main' );
+
+		$this->loader->add_action( 'admin_menu', $plugin_admin_menu, 'register' );
+
+
 
 	}
 
