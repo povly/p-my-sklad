@@ -166,9 +166,10 @@ function p_my_sklad_import_single_product($ms_product)
     $description = $ms_product['description'] ?? '';
     $quantity = isset($ms_product['quantity']) ? (float)$ms_product['quantity'] : 0;
 
-    $product->set_name($name);
-    $product->set_description($description);
-    $product->set_short_description($description);
+    // $product->set_name($name);
+    // $product->set_description($description);
+    // $product->set_short_description($description);
+
     $product->set_stock_quantity($quantity);
     $product->set_manage_stock(true);
     $product->set_stock_status($quantity > 0 ? 'instock' : 'outofstock');
@@ -364,41 +365,41 @@ function p_my_sklad_import_single_product($ms_product)
     $attachment_ids = [];
     $token = get_option('p_my_sklad_access_token');
 
-    if ($token && !empty($ms_product['images']['meta']['href'])) {
-      $image_rows = p_my_sklad_fetch_product_images($ms_product['meta']['href'], $token);
+    // if ($token && !empty($ms_product['images']['meta']['href'])) {
+    //   $image_rows = p_my_sklad_fetch_product_images($ms_product['meta']['href'], $token);
 
-      if (is_wp_error($image_rows)) {
-        p_my_sklad_log()->error('Ошибка при получении изображений товара', $image_rows);
-      } else {
-        foreach ($image_rows as $image) {
-          if (!empty($image['meta']['downloadHref'])) {
-            $download_url = trim($image['meta']['downloadHref']);
-            $filename = $image['filename'] ?? 'image.jpg';
-            $attachment_id = p_my_sklad_download_and_attach_image($download_url, $filename, $product_id, $token);
+    //   if (is_wp_error($image_rows)) {
+    //     p_my_sklad_log()->error('Ошибка при получении изображений товара', $image_rows);
+    //   } else {
+    //     foreach ($image_rows as $image) {
+    //       if (!empty($image['meta']['downloadHref'])) {
+    //         $download_url = trim($image['meta']['downloadHref']);
+    //         $filename = $image['filename'] ?? 'image.jpg';
+    //         $attachment_id = p_my_sklad_download_and_attach_image($download_url, $filename, $product_id, $token);
 
-            if (is_wp_error($attachment_id)) {
-              p_my_sklad_log()->error('Ошибка при загрузке изображения', $attachment_id);
-            } elseif ($attachment_id) {
-              $attachment_ids[] = $attachment_id;
-              p_my_sklad_log()->debug('Изображение загружено и привязано', [
-                'url' => $download_url,
-                'attachment_id' => $attachment_id
-              ]);
-            }
-          }
-        }
+    //         if (is_wp_error($attachment_id)) {
+    //           p_my_sklad_log()->error('Ошибка при загрузке изображения', $attachment_id);
+    //         } elseif ($attachment_id) {
+    //           $attachment_ids[] = $attachment_id;
+    //           p_my_sklad_log()->debug('Изображение загружено и привязано', [
+    //             'url' => $download_url,
+    //             'attachment_id' => $attachment_id
+    //           ]);
+    //         }
+    //       }
+    //     }
 
-        if (!empty($attachment_ids)) {
-          set_post_thumbnail($product_id, $attachment_ids[0]);
-          $product->set_gallery_image_ids(array_slice($attachment_ids, 1));
-          $product->save(); // Сохраняем изменения галереи
-          p_my_sklad_log()->debug('Галерея изображений установлена', [
-            'featured_image' => $attachment_ids[0],
-            'gallery_count' => count($attachment_ids) - 1
-          ]);
-        }
-      }
-    }
+    //     if (!empty($attachment_ids)) {
+    //       set_post_thumbnail($product_id, $attachment_ids[0]);
+    //       $product->set_gallery_image_ids(array_slice($attachment_ids, 1));
+    //       $product->save(); // Сохраняем изменения галереи
+    //       p_my_sklad_log()->debug('Галерея изображений установлена', [
+    //         'featured_image' => $attachment_ids[0],
+    //         'gallery_count' => count($attachment_ids) - 1
+    //       ]);
+    //     }
+    //   }
+    // }
 
     // === Единица измерения ===
     if (!empty($ms_product['uom']['meta']['href'])) {
