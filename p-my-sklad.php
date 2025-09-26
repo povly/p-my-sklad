@@ -16,7 +16,7 @@
  * Plugin Name:       Мой Склад интеграция (Woo)
  * Plugin URI:        https://povly.ru
  * Description:       Интеграция Мой Склад с Woo
- * Version:           1.2.0
+ * Version:           1.3.0
  * Author:            Porshnyov Anatoly
  * Author URI:        https://povly.ru/
  * License:           GPL-2.0+
@@ -35,8 +35,9 @@ if ( ! defined( 'WPINC' ) ) {
  * Start at version 1.0.0 and use SemVer - https://semver.org
  * Rename this for your plugin and update it as you release new versions.
  */
-define( 'P_MY_SKLAD_VERSION', '1.2.0' );
+define( 'P_MY_SKLAD_VERSION', '1.3.0' );
 define('P_MY_SKLAD_DIR', plugin_dir_path(__FILE__));
+define('P_MY_SKLAD_BASE', plugin_basename(__FILE__));
 
 /**
  * The code that runs during plugin activation.

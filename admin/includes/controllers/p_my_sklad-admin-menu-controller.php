@@ -5,32 +5,19 @@
  * @subpackage P_My_Sklad/admin_menu_controller
  * @author     Porshnyov Anatoly <povly19995@gmail.com>
  */
-class P_My_Sklad_Admin_Menu_Controller
+class P_My_Sklad_Admin_Menu_Controller extends P_My_Sklad_Admin_Base_Controller
 {
-  private function render_template($template_name, $data = [])
-  {
-    $template_path = P_MY_SKLAD_DIR . "/admin/templates/{$template_name}";
-
-    if (!file_exists($template_path)) {
-      wp_die(sprintf(__('Шаблон не найден: %s', 'p-my-sklad'), esc_html($template_name)));
-    }
-
-    // Изолируем переменные
-    extract($data);
-
-    // Подключаем шаблон (он имеет доступ к $data через extract)
-    include $template_path;
-  }
 
   public function render_page_main()
   {
     $this->render_template('menu/settings-page.php', [
       'settings' => get_option('p_my_sklad_settings_products', []),
-      'login_value' => isset($_POST['p_my_sklad_login']) ? sanitize_text_field($_POST['p_my_sklad_login']) : '',
+      'auth' => get_option('p_my_sklad_auth', []),
       'slug' => 'p_my_sklad',
       'menu_slug' => 'p-my-sklad',
     ]);
   }
+
 
   public function handle_page_main()
   {
@@ -50,8 +37,10 @@ class P_My_Sklad_Admin_Menu_Controller
       return;
     }
 
-    $login = sanitize_text_field($_POST['p_my_sklad_login'] ?? '');
-    $pass  = $_POST['p_my_sklad_pass'] ?? '';
+    $auth = $_POST['p_my_sklad_auth'] ?? '';
+
+    $login = sanitize_text_field($auth['login'] ?? '');
+    $pass  = $auth['pass'] ?? '';
 
     if (empty($login) || empty($pass)) {
       add_settings_error(
@@ -63,7 +52,9 @@ class P_My_Sklad_Admin_Menu_Controller
       return;
     }
 
-    $token = $this->p_my_sklad_fetch_token($login, $pass);
+
+
+    $token = $this->get_token($login, $pass);
 
     // Очищаем пароль из памяти
     $pass = null;
@@ -76,6 +67,9 @@ class P_My_Sklad_Admin_Menu_Controller
         __('Токен успешно сохранён.', 'p-my-sklad'),
         'updated'
       );
+
+      update_option('p_my_sklad_auth', $auth, false);
+
     } else {
       add_settings_error(
         'p_my_sklad',
@@ -86,7 +80,72 @@ class P_My_Sklad_Admin_Menu_Controller
     }
   }
 
-  private function p_my_sklad_fetch_token(string $login, string $password)
+  public function handle_page_main_settings(){
+    $logger = P_My_Sklad_WC_Logger::getInstance();
+
+    // Проверяем, что это наша форма
+    if (!isset($_POST['p_my_sklad_save_settings']) || !current_user_can('manage_options')) {
+      return;
+    }
+
+    $logger->info('Начата обработка формы настроек MySklad');
+
+    // Проверка nonce
+    if (!wp_verify_nonce($_POST['_wpnonce'] ?? '', 'p_my_sklad_token_nonce_settings')) {
+      add_settings_error(
+        'p_my_sklad',
+        'nonce_failed',
+        __('Недопустимый запрос. Попробуйте снова.', 'p-my-sklad'),
+        'error'
+      );
+      $logger->error('Проверка nonce не пройдена при сохранении настроек');
+      return;
+    }
+
+    $settings = $_POST['p_my_sklad_settings_products'] ?? [];
+
+    // Санитизация данных — ОБЯЗАТЕЛЬНО!
+    $sanitized_settings = [
+      'categories_filters' => sanitize_text_field($settings['categories_filters'] ?? ''),
+      'products_limit'     => sanitize_text_field($settings['products_limit'] ?? ''),
+      'product_interval'   => sanitize_text_field($settings['product_interval'] ?? ''),
+    ];
+
+    update_option('p_my_sklad_settings_products', $sanitized_settings);
+
+    $logger->info('Настройки синхронизации товаров сохранены', [
+      'categories_filter' => $sanitized_settings['categories_filters'],
+      'products_limit'    => $sanitized_settings['products_limit'],
+      'sync_interval'     => $sanitized_settings['product_interval']
+    ]);
+
+    // === УПРАВЛЕНИЕ CRON ===
+    $interval = $sanitized_settings['product_interval'];
+
+    // wp_clear_scheduled_hook('p_my_sklad_cron_sync_products');
+    // $logger->info('Очищены запланированные события p_my_sklad_cron_sync_products');
+
+    // if (!empty($interval)) {
+    //   if (wp_get_schedule('p_my_sklad_cron_sync_products') !== $interval) {
+    //     wp_schedule_event(time(), $interval, 'p_my_sklad_cron_sync_products');
+    //     $logger->info("Запланирован cron-запуск синхронизации", ['interval' => $interval]);
+    //   }
+    // } else {
+    //   $logger->info('Интервал синхронизации не задан — cron не планируется');
+    // }
+
+    // Уведомление об успешном сохранении
+    add_settings_error(
+      'p_my_sklad',
+      'settings_updated',
+      __('Настройки синхронизации товаров успешно сохранены.', 'p-my-sklad'),
+      'updated'
+    );
+
+    $logger->info('Форма настроек успешно обработана и сохранена');
+  }
+
+  private function get_token(string $login, string $password)
   {
     $credentials = base64_encode("$login:$password");
 

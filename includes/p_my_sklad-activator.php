@@ -13,5 +13,4 @@ class P_My_Sklad_Activator {
 	public static function activate() {
 
 	}
-
 }

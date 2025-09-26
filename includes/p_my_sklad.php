@@ -61,8 +61,10 @@ class P_My_Sklad {
 
 			'admin/p_my_sklad-admin.php',
 
+			'admin/includes/controllers/p_my_sklad-admin-base-controller.php',
 			'admin/includes/controllers/p_my_sklad-admin-menu-controller.php',
-			'admin/p_my_sklad-admin-menu.php',
+			'admin/includes/api/p_my_sklad-admin-menu.php',
+			'admin/includes/api/p_my_sklad-wc-logger.php'
 		];
 
 		foreach ($classes as $class) {
@@ -93,6 +95,9 @@ class P_My_Sklad {
 
 		$plugin_admin = new P_My_Sklad_Admin( $this->get_plugin_name(), $this->get_version() );
 
+		$this->loader->add_filter('plugin_row_meta', $plugin_admin, 'add_plugin_meta', 10, 2);
+		$this->loader->add_filter('cron_schedules', $plugin_admin, 'add_cron_intervals');
+
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
 
@@ -105,13 +110,13 @@ class P_My_Sklad {
 			'capability' => 'manage_options',
 			'menu_slug' => 'p-my-sklad',
 			'icon_url' => 'dashicons-cart',
+			'position' => 58
 		], [$plugin_admin_menu_controller, 'render_page_main']);
+
 		$this->loader->add_action('admin_init', $plugin_admin_menu_controller, 'handle_page_main' );
+		$this->loader->add_action('admin_init', $plugin_admin_menu_controller, 'handle_page_main_settings' );
 
 		$this->loader->add_action( 'admin_menu', $plugin_admin_menu, 'register' );
-
-
-
 	}
 
 

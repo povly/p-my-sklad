@@ -100,4 +100,27 @@ class P_My_Sklad_Admin {
 
 	}
 
+	public function add_plugin_meta($meta, $file){
+
+		if ($file == P_MY_SKLAD_BASE) {
+			$settings_link = sprintf(
+				'<a href="%s">%s</a>',
+				esc_url(admin_url('admin.php?page=p-my-sklad')),
+				esc_html__('Настройки', 'p_my_sklad')
+			);
+
+			$meta[] = $settings_link;
+		}
+		return $meta;
+	}
+
+	public function add_cron_intervals($schedules)
+	{
+		$schedules['every_six_hours'] = [
+			'interval' => 6 * HOUR_IN_SECONDS,
+			'display'  => __('Каждые 6 часов', 'p_my_sklad'),
+		];
+
+		return $schedules;
+	}
 }
