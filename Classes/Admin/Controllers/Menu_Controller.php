@@ -11,7 +11,7 @@ use PMySklad\Admin\Api\WC_Logger;
 class Menu_Controller extends Base_Controller
 {
 
-  public function render_page_main()
+  public function show_settings_page()
   {
     $this->render_template('page/settings-main.php', [
       'settings' => get_option('p_my_sklad_settings_products', []),
@@ -22,7 +22,7 @@ class Menu_Controller extends Base_Controller
   }
 
 
-  public function handle_page_main()
+  public function save_token_and_auth()
   {
     // Проверяем, что это наша форма
     if (!isset($_POST['p_my_sklad_save']) || !current_user_can('manage_options')) {
@@ -55,6 +55,7 @@ class Menu_Controller extends Base_Controller
       return;
     }
 
+    
 
 
     $token = $this->get_token($login, $pass);
@@ -83,7 +84,7 @@ class Menu_Controller extends Base_Controller
     }
   }
 
-  public function handle_page_main_settings(){
+  public function save_product_settings(){
     $logger = WC_Logger::getInstance();
 
     // Проверяем, что это наша форма

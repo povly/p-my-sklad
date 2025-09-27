@@ -19,7 +19,7 @@ use P_My_Sklad\Deactivator;
  * Plugin Name:       Мой Склад интеграция (Woo)
  * Plugin URI:        https://povly.ru
  * Description:       Интеграция Мой Склад с Woo
- * Version:           1.3.1
+ * Version:           1.3.2
  * Author:            Porshnyov Anatoly
  * Author URI:        https://povly.ru/
  * License:           GPL-2.0+
@@ -35,7 +35,7 @@ if ( ! defined( 'WPINC' ) ) {
 
 /**
  */
-define('P_MY_SKLAD_VERSION', '1.3.1' );
+define('P_MY_SKLAD_VERSION', '1.3.2' );
 define('P_MY_SKLAD_FILE', __FILE__);
 define('P_MY_SKLAD_DIR', plugin_dir_path(P_MY_SKLAD_FILE));
 define('P_MY_SKLAD_BASE', plugin_basename(P_MY_SKLAD_FILE));

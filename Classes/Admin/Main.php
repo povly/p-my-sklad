@@ -15,8 +15,6 @@
  * enqueue the admin-specific stylesheet and JavaScript.
  *
  * @package    P_My_Sklad
- * @subpackage P_My_Sklad/admin
- * @author     Porshnyov Anatoly <povly19995@gmail.com>
  */
 
 namespace P_My_Sklad\Admin;

@@ -116,10 +116,10 @@ class P_My_Sklad {
 			'menu_slug' => 'p-my-sklad',
 			'icon_url' => 'dashicons-cart',
 			'position' => 58
-		], [$admin_menu_controller, 'render_page_main']);
+		], [$admin_menu_controller, 'show_settings_page']);
 
-		$this->loader->add_action('admin_init', $admin_menu_controller, 'handle_page_main' );
-		$this->loader->add_action('admin_init', $admin_menu_controller, 'handle_page_main_settings' );
+		$this->loader->add_action('admin_init', $admin_menu_controller, 'save_token_and_auth' );
+		$this->loader->add_action('admin_init', $admin_menu_controller, 'save_product_settings' );
 
 		$this->loader->add_action( 'admin_menu', $admin_menu, 'register' );
 	}
