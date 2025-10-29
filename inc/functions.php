@@ -126,7 +126,7 @@ function p_my_sklad_import_single_product($ms_product)
           'product_path' => $product_path,
           'action' => 'skipped'
         ]);
-        return true; // не ошибка — фильтр
+        return true;
       } else {
         p_my_sklad_log()->debug('Товар прошёл фильтр категории', [
           'filter_path' => $filter_path,
@@ -339,7 +339,7 @@ function p_my_sklad_import_single_product($ms_product)
         }
       }
 
-      if (!empty($matching_category_ids)) {
+      if (!empty($matching_category_ids) && count($matching_category_ids) > 0) {
         // Добавляем ВСЕ найденные категории, не удаляя старые
         wp_set_object_terms($product_id, $matching_category_ids, 'product_cat', true);
         $product->set_status('publish');
@@ -426,6 +426,278 @@ function p_my_sklad_import_single_product($ms_product)
       'wc_product_id' => $product_id,
       'name' => $name
     ]);
+
+    return true;
+  } catch (Exception $e) {
+    $error = new WP_Error('import_failed', $e->getMessage(), [
+      'ms_code' => $ms_product['code'] ?? 'unknown',
+      'name' => $ms_product['name'] ?? 'unknown',
+      'trace' => $e->getTraceAsString(),
+    ]);
+
+    p_my_sklad_log()->error('Критическая ошибка при импорте товара', $error);
+    return $error;
+  }
+}
+
+function p_my_sklad_verify_products($ms_product)
+{
+  try {
+    $ms_code = $ms_product['code'] ?? '';
+
+    $name = $ms_product['name'] ?? 'Без названия';
+
+    if (empty($ms_code)) {
+      p_my_sklad_log()->debug('Пропущен товар без кода', ['name' => $name]);
+      return true; // не ошибка — просто пропуск
+    }
+
+    // === Фильтр категории ===
+    $settings = get_option('p_my_sklad_settings_products', []);
+    $filter_path = trim($settings['categories_filters'] ?? '');
+    $product_path = $ms_product['pathName'] ?? '';
+
+    if (!empty($filter_path)) {
+      if (strpos($product_path, $filter_path) !== 0) {
+        p_my_sklad_log()->debug('Товар не прошёл фильтр категории', [
+          'filter_path' => $filter_path,
+          'product_path' => $product_path,
+          'action' => 'skipped'
+        ]);
+        return true;
+      } else {
+        p_my_sklad_log()->debug('Товар прошёл фильтр категории', [
+          'filter_path' => $filter_path,
+          'product_path' => $product_path
+        ]);
+      }
+    }
+
+    // Поиск существующего товара
+    $args = [
+      'post_type'  => 'product',
+      'post_status' => ['publish'],
+      'meta_query' => [[
+        'key'   => 'p_my_sklad_code',
+        'value' => $ms_code,
+      ]],
+      'posts_per_page' => 1,
+    ];
+
+    $query = new WP_Query($args);
+    $product_id = $query->have_posts() ? $query->posts[0]->ID : 0;
+    $action = $product_id ? 'update' : 'create';
+
+    p_my_sklad_log()->debug("Определён тип операции с товаром", [
+      'action' => $action,
+      'product_id' => $product_id,
+      'ms_code' => $ms_code
+    ]);
+
+    $product = $product_id ? wc_get_product($product_id) : 0;
+
+    if (!$product) {
+      throw new Exception("Не удалось создать/получить объект WC_Product для ID: {$product_id}");
+    }
+
+    // === Основные поля ===
+    $description = $ms_product['description'] ?? '';
+    $quantity = isset($ms_product['quantity']) ? (float)$ms_product['quantity'] : 0;
+
+    // $product->set_name($name);
+    // $product->set_description($description);
+    // $product->set_short_description($description);
+
+    $product->set_stock_quantity($quantity);
+    $product->set_manage_stock(true);
+    $product->set_stock_status($quantity > 0 ? 'instock' : 'outofstock');
+
+
+    // Внешний код
+    $externalCode = $ms_product['externalCode'] ?? '';
+    if (!empty($externalCode)) {
+      $product->set_sku($externalCode);
+    }
+
+    p_my_sklad_log()->debug('Основные данные установлены', [
+      'name' => $name,
+      'description_length' => strlen($description),
+      'stock_quantity' => $quantity,
+      'stock_status' => $quantity > 0 ? 'instock' : 'outofstock'
+    ]);
+
+    // === Добавление описания в ACF repeater product_texts ===
+    if ($product_id) {
+      $key_text_1 = "product_texts_0_text_1";
+      $key_text_2 = "product_texts_0_text_2";
+      $field_name = 'product_texts';
+
+      // Пытаемся использовать ACF, если доступно
+      if (function_exists('update_field')) {
+        $existing_rows = get_field('product_texts', $product_id) ?: [];
+        $existing_rows = [
+          'text_1' => '',
+          'text_2' => '',
+        ];
+        update_field('product_texts', $existing_rows, $product_id);
+      } else {
+        // Fallback: через update_post_meta
+        update_post_meta($product_id, $key_text_1, '');
+        update_post_meta($product_id, $key_text_2, '');
+        update_post_meta($product_id, $field_name, 1);
+
+        p_my_sklad_log()->debug('Описание добавлено в ACF repeater через update_post_meta', [
+          'product_id' => $product_id,
+          'row_index' => 1,
+        ]);
+      }
+    }
+
+    // === Цены ===
+    $regular_price = 0;
+    $sale_price = 0;
+
+    if (!empty($ms_product['salePrices'])) {
+      foreach ($ms_product['salePrices'] as $sale_price_item) {
+        if (!isset($sale_price_item['value']) || !isset($sale_price_item['priceType']['name'])) {
+          continue;
+        }
+
+        $value = (float)$sale_price_item['value'] / 100;
+        $price_type_name = $sale_price_item['priceType']['name'];
+
+        if ($price_type_name === 'Цена продажи') {
+          $regular_price = $value;
+        } elseif ($price_type_name === 'Цена со скидкой' && $value > 0) {
+          $sale_price = $value;
+        }
+      }
+    }
+
+    $product->set_regular_price($regular_price);
+    if ($sale_price > 0 && $sale_price < $regular_price) {
+      $product->set_sale_price($sale_price);
+    } else {
+      $product->set_sale_price('');
+    }
+    $product->set_price($sale_price > 0 ? $sale_price : $regular_price);
+
+    p_my_sklad_log()->debug('Цены установлены', [
+      'regular_price' => $regular_price,
+      'sale_price' => $sale_price
+    ]);
+
+    $saved_product_id = $product->save();
+    if (!$saved_product_id) {
+      throw new Exception('Не удалось сохранить товар в WooCommerce');
+    }
+
+    // Обновляем $product_id после первого сохранения (если создавали)
+    $product_id = $saved_product_id;
+
+    p_my_sklad_log()->debug('Товар сохранён в базе', [
+      'wc_product_id' => $product_id,
+      'action' => $action
+    ]);
+
+    // === Категории ===
+    static $cached_categories = null;
+    static $cached_acf_categories = null;
+
+    if ($cached_categories === null) {
+      $all_categories = get_terms([
+        'taxonomy'   => 'product_cat',
+        'hide_empty' => false,
+      ]);
+
+      if (is_wp_error($all_categories)) {
+        throw new Exception('Ошибка загрузки категорий: ' . $all_categories->get_error_message());
+      }
+
+      $cached_categories = [];
+      $cached_acf_categories = [];
+
+      foreach ($all_categories as $term) {
+        $term_id = $term->term_id;
+        $full_name = $term->name;
+
+        $cached_categories[$term_id] = $full_name;
+
+        $allowed_subcats_raw = '';
+        if (function_exists('get_field')) {
+          $allowed_subcats_raw = get_field('p_my_sklad_categories', 'product_cat_' . $term_id);
+        }
+
+        if (empty($allowed_subcats_raw)) {
+          $cached_acf_categories[$term_id] = ['raw' => [], 'normalized' => []];
+        } else {
+          $raw_list = array_map('trim', explode(';', $allowed_subcats_raw));
+          $normalized_list = array_map('mb_strtolower', $raw_list);
+          $cached_acf_categories[$term_id] = ['raw' => $raw_list, 'normalized' => $normalized_list];
+        }
+      }
+
+      p_my_sklad_log()->debug('Кеш категорий инициализирован', [
+        'total_categories' => count($cached_categories)
+      ]);
+    }
+
+    $matching_category_ids = [];
+
+    if (!empty($product_path)) {
+      $parts = explode('/', $product_path);
+      $extracted_subcat_name = trim(end($parts));
+      $normalized_subcat = mb_strtolower($extracted_subcat_name);
+
+      // Поиск по точному имени — ВСЕ совпадения
+      foreach ($cached_categories as $id => $full_name) {
+        if (mb_strtolower(trim($full_name)) === $normalized_subcat) {
+          $matching_category_ids[] = (int)$id;
+          p_my_sklad_log()->debug('Найдена категория по совпадению имени', [
+            'matched_category' => $full_name,
+            'category_id' => $id,
+            'source' => 'fallback_by_name'
+          ]);
+        }
+      }
+
+      // Поиск через ACF — ВСЕ совпадения (избегаем дублей)
+      foreach ($cached_acf_categories as $id => $data) {
+        if (in_array($normalized_subcat, $data['normalized'])) {
+          $int_id = (int)$id;
+          if (!in_array($int_id, $matching_category_ids)) {
+            $matching_category_ids[] = $int_id;
+            p_my_sklad_log()->debug('Найдена категория через ACF-фильтр', [
+              'matched_category' => $cached_categories[$id],
+              'category_id' => $id,
+              'source' => 'acf_filter',
+              'allowed_values' => $data['raw']
+            ]);
+          }
+        }
+      }
+
+      if (!empty($matching_category_ids) && count($matching_category_ids) > 0) {
+        // Добавляем ВСЕ найденные категории, не удаляя старые
+        wp_set_object_terms($product_id, $matching_category_ids, 'product_cat', true);
+        $product->set_status('publish');
+        $product->save();
+        p_my_sklad_log()->debug('Найдено и добавлено категорий: ' . count($matching_category_ids), [
+          'category_ids' => $matching_category_ids,
+          'category_names' => array_intersect_key($cached_categories, array_flip($matching_category_ids))
+        ]);
+      } else {
+        // Ни одна категория не найдена
+        $product->set_status('draft');
+        $product->save();
+        p_my_sklad_log()->debug('Категория не найдена — товар переведён в черновик', [
+          'missing_subcat' => $extracted_subcat_name,
+          'product_path' => $product_path
+        ]);
+      }
+    } else {
+      p_my_sklad_log()->debug('У товара нет pathName — пропуск категорий', ['ms_code' => $ms_code]);
+    }
 
     return true;
   } catch (Exception $e) {
