@@ -355,7 +355,7 @@ function p_my_sklad_run_sync_batch()
     ]);
 
     // Можно также логировать ошибки внутри импорта, если p_my_sklad_import_single_product возвращает WP_Error
-    $result = p_my_sklad_import_single_product($product);
+    $result = p_my_sklad_import_single_product($product,  $settings);
 
     // Если функция возвращает WP_Error — логируем
     if (is_wp_error($result)) {

@@ -96,7 +96,7 @@ function p_my_sklad_get_assortments()
  * @param array $ms_product Данные товара из API МойСклад
  * @return bool|WP_Error true при успехе, WP_Error при ошибке
  */
-function p_my_sklad_import_single_product($ms_product)
+function p_my_sklad_import_single_product($ms_product, $settings)
 {
 	try {
 		$ms_code = $ms_product['code'] ?? '';
@@ -121,7 +121,6 @@ function p_my_sklad_import_single_product($ms_product)
 		]);
 
 		// === Фильтр категории ===
-		$settings = get_option('p_my_sklad_settings_products', []);
 		$filter_path = trim($settings['categories_filters'] ?? '');
 		$product_path = $ms_product['pathName'] ?? '';
 
@@ -504,8 +503,9 @@ function p_my_sklad_import_single_product($ms_product)
 		$matching_category_ids = [];
 
 		if (!empty($product_path)) {
-			$parts = explode('/', $product_path);
-			$extracted_subcat_name = trim(end($parts));
+			// $parts = explode('/', $product_path);
+			// $extracted_subcat_name = trim(end($parts));
+			$extracted_subcat_name = str_replace($filter_path, '', $product_path);
 
 			// Поиск по точному имени — ВСЕ совпадения
 			foreach ($cached_categories as $id => $full_name) {
