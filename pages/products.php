@@ -416,7 +416,6 @@ function p_my_sklad_cron_sync_products_handler()
       'event'          => 'p_my_sklad_cron_sync_products',
       'action'         => 'skipped_duplicate'
     ]);
-    return;
   }
 
   // 🧹 Очищаем старые события и прогресс
