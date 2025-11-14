@@ -107,6 +107,8 @@ function p_my_sklad_import_single_product($ms_product)
 
 		$exrernalId = $ms_product['id'] ?? '';
 
+		$token = get_option('p_my_sklad_access_token');
+
 		// if (empty($ms_code)) {
 		//   p_my_sklad_log()->debug('Пропущен товар без кода', ['name' => $name]);
 		//   return true; // не ошибка — просто пропуск
@@ -217,7 +219,7 @@ function p_my_sklad_import_single_product($ms_product)
 		if (count($products) > 1) {
 
 			$keep_id = $products[0]->ID;  // Оставляем первый уникальный товар (можно изменить на $product_id, если он отличается)
-			
+
 			$product_id = $keep_id;  // Устанавливаем ID товара для обработки
 
 			foreach ($products as $product) {
@@ -243,11 +245,62 @@ function p_my_sklad_import_single_product($ms_product)
 			'ms_code' => $ms_code
 		]);
 
-		$product = $product_id ? wc_get_product($product_id) : new WC_Product_Simple();
+		$packs = $ms_product['packs'] ?? [];
 
-		// if (!$product) {
-		// 	throw new Exception("Не удалось создать/получить объект WC_Product для ID: {$product_id}");
-		// }
+		if ($product_id) {
+			$product = wc_get_product($product_id);
+		} else {
+			if (isset($packs) && is_array($packs) && count($packs) > 0) {
+				$product = new WC_Product_Variable();
+			} else {
+				$product = new WC_Product_Simple();
+			}
+		}
+
+		// === Единица измерения ===
+		if (!empty($ms_product['uom']['meta']['href'])) {
+			$uom_name = p_my_sklad_fetch_uom_name($ms_product['uom']['meta']['href'], $token);
+			if (is_wp_error($uom_name)) {
+				p_my_sklad_log()->error('Ошибка при получении единицы измерения', $uom_name);
+			} elseif (!empty($uom_name)) {
+				update_post_meta($product_id, '_oh_product_unit_name', $uom_name);
+				p_my_sklad_log()->debug('Единица измерения установлена', [
+					'uom' => $uom_name
+				]);
+			}
+		}
+
+
+		if (isset($packs) && is_array($packs) && count($packs) > 0) {
+			if (!$product->is_type('variable')) {
+				wp_set_object_terms($product->get_id(), 'variable', 'product_type');
+			}
+			$attributes = [];
+			$options = [];
+
+			foreach ($packs as $pack) {
+				$options[] = $pack['quantity'];
+			}
+
+
+			$attribute = new WC_Product_Attribute();
+			$attribute->set_name('Вес');
+			$attribute->set_options($options);
+			$attribute->set_visible(true);
+			$attribute->set_variation(true);
+			$attributes[] = $attribute;
+
+			$product->set_attributes($attributes);
+			$product->save();
+
+
+			foreach ($options as $option) {
+				$variation_1 = new WC_Product_Variation();
+				$variation_1->set_parent_id($product->get_id());
+				$variation_1->set_attributes(['Вес' => $option]);
+				$variation_1->save();
+			}
+		}
 
 		// === Основные поля ===
 		$description = $ms_product['description'] ?? '';
@@ -455,7 +508,6 @@ function p_my_sklad_import_single_product($ms_product)
 
 		// === Изображения ===
 		$attachment_ids = [];
-		$token = get_option('p_my_sklad_access_token');
 
 		// if ($token && !empty($ms_product['images']['meta']['href'])) {
 		//   $image_rows = p_my_sklad_fetch_product_images($ms_product['meta']['href'], $token);
@@ -492,19 +544,6 @@ function p_my_sklad_import_single_product($ms_product)
 		//     }
 		//   }
 		// }
-
-		// === Единица измерения ===
-		if (!empty($ms_product['uom']['meta']['href'])) {
-			$uom_name = p_my_sklad_fetch_uom_name($ms_product['uom']['meta']['href'], $token);
-			if (is_wp_error($uom_name)) {
-				p_my_sklad_log()->error('Ошибка при получении единицы измерения', $uom_name);
-			} elseif (!empty($uom_name)) {
-				update_post_meta($product_id, '_oh_product_unit_name', $uom_name);
-				p_my_sklad_log()->debug('Единица измерения установлена', [
-					'uom' => $uom_name
-				]);
-			}
-		}
 
 		// === Мета-поля ===
 		update_post_meta($product_id, 'p_my_sklad_code', $ms_code);
@@ -800,4 +839,40 @@ function p_my_sklad_fetch_uom_name($uom_href, $token)
 function p_my_sklad_log()
 {
 	return P_MySklad_WC_Logger::instance();
+}
+
+function p_my_sklad_create_variable_product()
+{
+	// Создаём новый переменный продукт
+	$product = new WC_Product_Variable();
+	$product->set_name('Футболка с вариациями'); // Название товара
+	$product->set_description('Описание товара'); // Описание
+	$product->set_regular_price(0); // Основная цена (для переменных товаров обычно 0)
+	$product->set_category_ids([1]); // ID категорий (пример)
+	$product->set_image_id(123); // ID основной картинки (пример)
+
+	// Добавляем атрибуты (например, Цвет и Размер)
+	$attributes = array();
+
+	// Атрибут 1: Цвет
+	$color_attribute = new WC_Product_Attribute();
+	$color_attribute->set_name('Цвет');
+	$color_attribute->set_options(['Красный', 'Синий', 'Зелёный']); // Варианты атрибута
+	$color_attribute->set_visible(true); // Видимый на фронтенде
+	$color_attribute->set_variation(true); // Для вариаций
+	$attributes[] = $color_attribute;
+
+	$product->set_attributes($attributes);
+
+	// Сохраняем продукт
+	$product_id = $product->save();
+
+	// Теперь создаём вариации на основе комбинаций атрибутов
+	$variation_1 = new WC_Product_Variation();
+	$variation_1->set_parent_id($product_id);
+	$variation_1->set_attributes(['Цвет' => 'Красный', 'Размер' => 'M']); // Комбинация атрибутов
+	$variation_1->set_regular_price(150); // Цена вариации
+	$variation_1->set_stock_quantity(10); // Количество на складе
+	$variation_1->set_manage_stock(true);
+	$variation_1->save();
 }
