@@ -262,32 +262,56 @@ function p_my_sklad_import_single_product($ms_product)
 			}
 		}
 
-		// === Единица измерения ===
-		if (!empty($ms_product['uom']['meta']['href'])) {
-			$uom_name = p_my_sklad_fetch_uom_name($ms_product['uom']['meta']['href'], $token);
-			if (is_wp_error($uom_name)) {
-				p_my_sklad_log()->error('Ошибка при получении единицы измерения', $uom_name);
-			} elseif (!empty($uom_name)) {
-				update_post_meta($product_id, '_oh_product_unit_name', $uom_name);
-				p_my_sklad_log()->debug('Единица измерения установлена', [
-					'uom' => $uom_name
-				]);
-			}
-		}
-
 
 		if (isset($packs) && is_array($packs) && count($packs) > 0) {
 			// wp_remove_object_terms($product->get_id(), 'simple', 'product_type');
 			// wp_set_object_terms($product->get_id(), 'variable', 'product_type', true);
 
-			// Get the correct product classname from the new product type
-			$product_classname = WC_Product_Factory::get_product_classname($product_id, 'variable');
+			// // Get the correct product classname from the new product type
+			// $product_classname = WC_Product_Factory::get_product_classname($product_id, 'variable');
 
-			// Get the new product object from the correct classname
-			$new_product = new $product_classname($product_id);
+			// // Get the new product object from the correct classname
+			// $new_product = new $product_classname($product_id);
 
-			// Save product to database and sync caches
-			$new_product->save();
+			// // Save product to database and sync caches
+			// $new_product->save();
+
+
+			if (!$product->is_type('variable')) {
+				$sku = $product->get_sku();
+				$product->set_sku('');
+				$product->save();
+
+				// Создать новый вариативный продукт
+				$new_product = new WC_Product_Variable();
+
+				// Скопировать базовые данные
+				$new_product->set_name($product->get_name());
+				$new_product->set_description($product->get_description());
+				$new_product->set_short_description($product->get_short_description());
+				$new_product->set_regular_price($product->get_regular_price());
+				$new_product->set_sale_price($product->get_sale_price());
+				$new_product->set_sku($sku); // Измените SKU
+				$new_product->set_manage_stock($product->get_manage_stock());
+				$new_product->set_stock_quantity($product->get_stock_quantity());
+				$new_product->set_stock_status($product->get_stock_status());
+
+
+				// Копировать изображения
+				$new_product->set_image_id($product->get_image_id()); // Основное изображение
+				$new_product->set_gallery_image_ids($product->get_gallery_image_ids()); // Галерея изображений
+
+				$new_product->set_category_ids($product->get_category_ids());
+
+				// Сохранить новый продукт
+				$new_product_id = $new_product->save();
+
+				if ($new_product_id) {
+					$product->delete();
+					$product = wc_get_product($new_product_id);
+				}
+			}
+
 
 			$attributes = [];
 			$options = [];
@@ -340,6 +364,21 @@ function p_my_sklad_import_single_product($ms_product)
 			'stock_quantity' => $quantity,
 			'stock_status' => $quantity > 0 ? 'instock' : 'outofstock'
 		]);
+
+
+
+		// === Единица измерения ===
+		if (!empty($ms_product['uom']['meta']['href'])) {
+			$uom_name = p_my_sklad_fetch_uom_name($ms_product['uom']['meta']['href'], $token);
+			if (is_wp_error($uom_name)) {
+				p_my_sklad_log()->error('Ошибка при получении единицы измерения', $uom_name);
+			} elseif (!empty($uom_name)) {
+				update_post_meta($product_id, '_oh_product_unit_name', $uom_name);
+				p_my_sklad_log()->debug('Единица измерения установлена', [
+					'uom' => $uom_name
+				]);
+			}
+		}
 
 		// // === Добавление описания в ACF repeater product_texts ===
 		// if ($product_id) {
