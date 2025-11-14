@@ -142,7 +142,27 @@ function p_my_sklad_import_single_product($ms_product)
 		}
 
 		// Поиск товара в приоритетном порядке:
-		// 1. Сначала по $externalId (предполагаю, что это $exrernalId в вашем коде) для метаполя p_my_sklad_id
+
+		// 1. Если не найден, поиск по SKU (externalCode)
+		if (!empty($externalCode)) {
+			$args = [
+				'post_type' => 'product',
+				'post_status' => ['publish', 'draft'],
+				'meta_query' => [
+					[
+						'key' => '_sku',  // Предполагаю стандартное поле SKU в WooCommerce; замените на свой мета-ключ, если отличается
+						'value' => $externalCode,
+					]
+				],
+				'posts_per_page' => -1,  // Получаем все товары для обработки дубликатов
+			];
+			$query = new WP_Query($args);
+
+			$products = $query->have_posts() ? $query->posts : [];
+			$product_id = $query->have_posts() ? $query->posts[0]->ID : 0;
+		}
+
+		// 2. Сначала по $externalId (предполагаю, что это $exrernalId в вашем коде) для метаполя p_my_sklad_id
 		$args = [
 			'post_type' => 'product',
 			'post_status' => ['publish', 'draft'],
@@ -157,9 +177,9 @@ function p_my_sklad_import_single_product($ms_product)
 
 		$query = new WP_Query($args);
 
-		$products = $query->have_posts() ? $query->posts : [];
+		$products = array_merge($products, $query->have_posts() ? $query->posts : []);  // Добавляем к общему массиву
 
-		// 2. Если не найден, поиск по p_my_sklad_code
+		// 3. Если не найден, поиск по p_my_sklad_code
 		if (!empty($ms_code)) {
 			$args = [
 				'post_type' => 'product',
@@ -175,22 +195,7 @@ function p_my_sklad_import_single_product($ms_product)
 			$query = new WP_Query($args);
 			$products = array_merge($products, $query->have_posts() ? $query->posts : []);  // Добавляем к общему массиву
 		}
-		// 3. Если не найден, поиск по SKU (externalCode)
-		if (!empty($externalCode)) {
-			$args = [
-				'post_type' => 'product',
-				'post_status' => ['publish', 'draft'],
-				'meta_query' => [
-					[
-						'key' => '_sku',  // Предполагаю стандартное поле SKU в WooCommerce; замените на свой мета-ключ, если отличается
-						'value' => $externalCode,
-					]
-				],
-				'posts_per_page' => -1,  // Получаем все товары для обработки дубликатов
-			];
-			$query = new WP_Query($args);
-			$products = array_merge($products, $query->have_posts() ? $query->posts : []);  // Добавляем к общему массиву
-		}
+
 		// 4. Если не найден, поиск по названию (name)
 		if (!empty($name)) {
 			$args = [
@@ -218,7 +223,7 @@ function p_my_sklad_import_single_product($ms_product)
 		// Если найдено более одного уникального товара, удаляем все дубликаты, оставляя только один для обработки
 		if (count($products) > 1) {
 
-			$keep_id = $products[0]->ID;  // Оставляем первый уникальный товар (можно изменить на $product_id, если он отличается)
+			$keep_id = $product_id ?: $products[0]->ID;  // Оставляем первый уникальный товар (можно изменить на $product_id, если он отличается)
 
 			$product_id = $keep_id;  // Устанавливаем ID товара для обработки
 
@@ -272,9 +277,18 @@ function p_my_sklad_import_single_product($ms_product)
 
 
 		if (isset($packs) && is_array($packs) && count($packs) > 0) {
-			if (!$product->is_type('variable')) {
-				wp_set_object_terms($product->get_id(), 'variable', 'product_type');
-			}
+			// wp_remove_object_terms($product->get_id(), 'simple', 'product_type');
+			// wp_set_object_terms($product->get_id(), 'variable', 'product_type', true);
+
+			// Get the correct product classname from the new product type
+			$product_classname = WC_Product_Factory::get_product_classname($product_id, 'variable');
+
+			// Get the new product object from the correct classname
+			$new_product = new $product_classname($product_id);
+
+			// Save product to database and sync caches
+			$new_product->save();
+
 			$attributes = [];
 			$options = [];
 
