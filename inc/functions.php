@@ -147,7 +147,7 @@ function p_my_sklad_import_single_product($ms_product)
 		if (!empty($externalCode)) {
 			$args = [
 				'post_type' => 'product',
-				'post_status' => ['publish', 'draft'],
+				'post_status' => ['publish', 'draft', 'private'],
 				'meta_query' => [
 					[
 						'key' => '_sku',  // Предполагаю стандартное поле SKU в WooCommerce; замените на свой мета-ключ, если отличается
@@ -165,7 +165,7 @@ function p_my_sklad_import_single_product($ms_product)
 		// 2. Сначала по $externalId (предполагаю, что это $exrernalId в вашем коде) для метаполя p_my_sklad_id
 		$args = [
 			'post_type' => 'product',
-			'post_status' => ['publish', 'draft'],
+			'post_status' => ['publish', 'draft', 'private'],
 			'meta_query' => [
 				[
 					'key' => 'p_my_sklad_id',
@@ -183,7 +183,7 @@ function p_my_sklad_import_single_product($ms_product)
 		if (!empty($ms_code)) {
 			$args = [
 				'post_type' => 'product',
-				'post_status' => ['publish', 'draft'],
+				'post_status' => ['publish', 'draft', 'private'],
 				'meta_query' => [
 					[
 						'key' => 'p_my_sklad_code',
@@ -200,7 +200,7 @@ function p_my_sklad_import_single_product($ms_product)
 		if (!empty($name)) {
 			$args = [
 				'post_type' => 'product',
-				'post_status' => ['publish', 'draft'],
+				'post_status' => ['publish', 'draft', 'private'],
 				'title' => $name,
 				'posts_per_page' => -1,  // Получаем все товары для обработки дубликатов
 			];
@@ -501,7 +501,9 @@ function p_my_sklad_import_single_product($ms_product)
 			if (count($matching_category_ids) > 0) {
 				// Добавляем ВСЕ найденные категории, не удаляя старые
 				wp_set_object_terms($product_id, $matching_category_ids, 'product_cat');
-				$product->set_status('publish');
+				if ($product->get_status() !== 'private') {
+					$product->set_status('publish');
+				}
 				$product->save();
 				p_my_sklad_log()->debug('Найдено и добавлено категорий: ' . count($matching_category_ids), [
 					'category_ids' => $matching_category_ids,
