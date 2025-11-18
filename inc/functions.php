@@ -261,6 +261,8 @@ function p_my_sklad_import_single_product($ms_product, $settings)
 			}
 		}
 
+        $quantity = isset($ms_product['quantity']) ? (float) $ms_product['quantity'] : 0;
+
 
 		if (isset($packs) && is_array($packs) && count($packs) > 0) {
 			// wp_remove_object_terms($product->get_id(), 'simple', 'product_type');
@@ -291,9 +293,9 @@ function p_my_sklad_import_single_product($ms_product, $settings)
 				$new_product->set_regular_price($product->get_regular_price());
 				$new_product->set_sale_price($product->get_sale_price());
 				$new_product->set_sku($sku); // Измените SKU
-				$new_product->set_manage_stock($product->get_manage_stock());
-				$new_product->set_stock_quantity($product->get_stock_quantity());
-				$new_product->set_stock_status($product->get_stock_status());
+				$new_product->set_manage_stock(false);
+                update_post_meta($new_product->get_id(), '_is_weight_based', 'yes');
+                update_post_meta($new_product->get_id(), '_stock_weight', $quantity);
 
 
 				// Копировать изображения
@@ -312,44 +314,121 @@ function p_my_sklad_import_single_product($ms_product, $settings)
 			}
 
 
-			$attributes = [];
-			$options = [];
+            $options = [];
 
-			foreach ($packs as $pack) {
-				$options[] = $pack['quantity'];
-			}
+            // Собираем опции (значения атрибута) из packs
+            foreach ($packs as $pack) {
+                if (isset($pack['quantity']) && !empty($pack['quantity'])) {
+                    $options[] = $pack['quantity'];  // Например, '1 кг', '2 кг'
+                }
+            }
 
+            // Проверяем, есть ли хотя бы одна опция
+            if (!empty($options)) {
+                // Получаем все существующие глобальные атрибуты
+                $attribute_taxonomies = wc_get_attribute_taxonomies();
+                $attribute_exists = false;
+                $attribute_id = null;
+                $attribute_slug = '';
 
-			$attribute = new WC_Product_Attribute();
-			$attribute->set_name('Вес');
-			$attribute->set_options($options);
-			$attribute->set_visible(true);
-			$attribute->set_variation(true);
-			$attributes[] = $attribute;
+                // Ищем атрибут по имени 'Вес'
+                foreach ($attribute_taxonomies as $tax) {
+                    if ($tax->attribute_name === 'Вес') {
+                        $attribute_exists = true;
+                        $attribute_id = $tax->attribute_id;
+                        $attribute_slug = $tax->attribute_name;  // Slug атрибута ('ves')
+                        $taxonomy = 'pa_' . $attribute_slug;  // Полная таксономия, например 'pa_ves'
+                        break;
+                    }
+                }
 
-			$product->set_attributes($attributes);
-			$product->save();
+                if (!$attribute_exists) {
+                    // Если атрибута нет, создаём глобальный атрибут
+                    $attribute_id = wc_create_attribute([
+                        'name' => 'Вес',
+                        'slug' => 'ves',  // Slug для атрибута (используется в таксономии)
+                        'type' => 'select',
+                    ]);
+                    $taxonomy = 'pa_ves';  // Таксономия для вариаций
+                } else {
+                    // Если атрибут уже есть, используем его таксономию
+                    $taxonomy = 'pa_' . $attribute_slug;
+                }
 
+                // Получаем текущие атрибуты товара
+                $existing_attributes = $product->get_attributes();
+                $existing_tax_options = isset($existing_attributes[$taxonomy]) ? $existing_attributes[$taxonomy]->get_options() : [];
 
-			foreach ($options as $option) {
-				$variation_1 = new WC_Product_Variation();
-				$variation_1->set_parent_id($product->get_id());
-				$variation_1->set_attributes(['Вес' => $option]);
-				$variation_1->save();
-			}
+                // Обновляем опции атрибута (добавляем новые без дубликатов)
+                $new_tax_options = array_unique(array_merge($existing_tax_options, $options));
+
+                // Терминируем новые опции, если они не существуют в таксономии
+                foreach ($new_tax_options as $option) {
+                    if (!term_exists($option, $taxonomy)) {
+                        wp_insert_term($option, $taxonomy);
+                    }
+                }
+
+                // Проверяем, установлен ли атрибут для товара (если нет, добавляем в WC_Product_Attribute)
+                if (!isset($existing_attributes[$taxonomy])) {
+                    $attribute = new WC_Product_Attribute();
+                    $attribute->set_id($attribute_id);
+                    $attribute->set_name($taxonomy);  // И(X)мя атрибута как таксономия
+                    $attribute->set_options($new_tax_options);
+                    $attribute->set_visible(true);
+                    $attribute->set_variation(true);
+                    $existing_attributes[$taxonomy] = $attribute;
+                } else {
+                    // Обновляем существующие опции
+                    $existing_attributes[$taxonomy]->set_options($new_tax_options);
+                }
+
+                // Устанавливаем атрибуты товару и сохраняем
+                $product->set_attributes($existing_attributes);
+                $product->save();
+
+                // Теперь создаём вариации только для новых опций
+//                $existing_variations = $product->get_children();  // IDs существующих вариаций
+//                $existing_variation_attrs = [];
+//                foreach ($existing_variations as $var_id) {
+//                    $variation = wc_get_product($var_id);
+//                    if ($variation && $variation->is_type('variation')) {
+//                        $attrs = $variation->get_attributes();
+//                        if (isset($attrs[$taxonomy])) {
+//                            $existing_variation_attrs[] = $attrs[$taxonomy];
+//                        }
+//                    }
+//                }
+
+//                foreach ($options as $option) {
+//                    // Создаём вариацию только если такой опции ещё нет
+//                    if (!in_array($option, $existing_variation_attrs)) {
+//                        $variation = new WC_Product_Variation();
+//                        $variation->set_parent_id($product->get_id());
+//                        $variation->set_attributes(['attribute_' . $taxonomy => $option]);  // Используем таксономию
+//                        // Дополнительно устанавливаем цену и т.д., если нужно
+//                        $variation->save();
+//                    }
+//                }
+            }
 		}
 
 		// === Основные поля ===
 		$description = $ms_product['description'] ?? '';
-		$quantity = isset($ms_product['quantity']) ? (float) $ms_product['quantity'] : 0;
 
 		$action === 'create' && $product->set_name($name);
 		// $product->set_description($description);
 		// $product->set_short_description($description);
 
-		$product->set_stock_quantity($quantity);
-		$product->set_manage_stock(true);
-		$product->set_stock_status($quantity > 0 ? 'instock' : 'outofstock');
+        if (!$product->is_type('variable')){
+            $product->set_stock_quantity($quantity);
+            $product->set_manage_stock(true);
+            $product->set_stock_status($quantity > 0 ? 'instock' : 'outofstock');
+        } else {
+            $product->set_manage_stock(false);
+            update_post_meta($product->get_id(), '_is_weight_based', 'yes');
+            update_post_meta($product->get_id(), '_stock_weight', $quantity);
+        }
 
 
 		// Внешний код
@@ -539,7 +618,7 @@ function p_my_sklad_import_single_product($ms_product, $settings)
 
 			if (count($matching_category_ids) > 0) {
 				// Добавляем ВСЕ найденные категории, не удаляя старые
-				wp_set_object_terms($product_id, $matching_category_ids, 'product_cat');
+				wp_set_object_terms($product_id, $matching_category_ids, 'product_cat', true);
 				if ($product->get_status() !== 'private') {
 					$product->set_status('publish');
 				}
