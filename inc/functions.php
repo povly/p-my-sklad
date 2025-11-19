@@ -432,7 +432,7 @@ function p_my_sklad_import_single_product($ms_product, $settings)
 
 
         // Внешний код
-        if (!empty($externalCode)) {
+        if (!empty($externalCode) && $action === 'create') {
             $product->set_sku($externalCode);
         }
 
