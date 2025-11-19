@@ -372,7 +372,7 @@ function p_my_sklad_import_single_product($ms_product, $settings)
                 $attribute->set_options($unique_term_ids);
                 $attribute->set_visible(true);
                 $attribute->set_variation(true);
-                //    $product->set_attributes([$attribute]);
+                $product->set_attributes([$attribute]);
                 $product->save();
 
                 $existing_variations = $product->get_children();
@@ -408,7 +408,6 @@ function p_my_sklad_import_single_product($ms_product, $settings)
                         p_my_sklad_log()->debug('Скрыта старая вариация', ['taxonomy' => $taxonomy, 'term_slug' => $slug]);
                     }
                 }
-
             }
         }
 
