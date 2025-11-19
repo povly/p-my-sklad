@@ -264,7 +264,7 @@ function p_my_sklad_import_single_product($ms_product, $settings)
         $quantity = isset($ms_product['quantity']) ? (float) $ms_product['quantity'] : 0;
 
 
-		if (isset($packs) && is_array($packs) && count($packs) > 0) {
+		if (isset($packs) && count($packs) > 0) {
 			// wp_remove_object_terms($product->get_id(), 'simple', 'product_type');
 			// wp_set_object_terms($product->get_id(), 'variable', 'product_type', true);
 
@@ -324,12 +324,13 @@ function p_my_sklad_import_single_product($ms_product, $settings)
             }
 
             // Проверяем, есть ли хотя бы одна опция
-            if (!empty($options)) {
+            if (count($options) > 0) {
                 // Получаем все существующие глобальные атрибуты
                 $attribute_taxonomies = wc_get_attribute_taxonomies();
                 $attribute_exists = false;
                 $attribute_id = null;
                 $attribute_slug = '';
+                $taxonomy = '';
 
                 // Ищем атрибут по имени 'Вес'
                 foreach ($attribute_taxonomies as $tax) {
@@ -388,28 +389,28 @@ function p_my_sklad_import_single_product($ms_product, $settings)
                 $product->save();
 
                 // Теперь создаём вариации только для новых опций
-//                $existing_variations = $product->get_children();  // IDs существующих вариаций
-//                $existing_variation_attrs = [];
-//                foreach ($existing_variations as $var_id) {
-//                    $variation = wc_get_product($var_id);
-//                    if ($variation && $variation->is_type('variation')) {
-//                        $attrs = $variation->get_attributes();
-//                        if (isset($attrs[$taxonomy])) {
-//                            $existing_variation_attrs[] = $attrs[$taxonomy];
-//                        }
-//                    }
-//                }
+                $existing_variations = $product->get_children();  // IDs существующих вариаций
+                $existing_variation_attrs = [];
+                foreach ($existing_variations as $var_id) {
+                    $variation = wc_get_product($var_id);
+                    if ($variation && $variation->is_type('variation')) {
+                        $attrs = $variation->get_attributes();
+                        if (isset($attrs[$taxonomy])) {
+                            $existing_variation_attrs[] = $attrs[$taxonomy];
+                        }
+                    }
+                }
 
-//                foreach ($options as $option) {
-//                    // Создаём вариацию только если такой опции ещё нет
-//                    if (!in_array($option, $existing_variation_attrs)) {
-//                        $variation = new WC_Product_Variation();
-//                        $variation->set_parent_id($product->get_id());
-//                        $variation->set_attributes(['attribute_' . $taxonomy => $option]);  // Используем таксономию
-//                        // Дополнительно устанавливаем цену и т.д., если нужно
-//                        $variation->save();
-//                    }
-//                }
+                foreach ($options as $option) {
+                    // Создаём вариацию только если такой опции ещё нет
+                    if (!in_array($option, $existing_variation_attrs)) {
+                        $variation = new WC_Product_Variation();
+                        $variation->set_parent_id($product->get_id());
+                        $variation->set_attributes([$taxonomy => $option]);  // Используем таксономию
+                        // Дополнительно устанавливаем цену и т.д., если нужно
+                        $variation->save();
+                    }
+                }
             }
 		}
 
@@ -429,6 +430,8 @@ function p_my_sklad_import_single_product($ms_product, $settings)
             update_post_meta($product->get_id(), '_is_weight_based', 'yes');
             update_post_meta($product->get_id(), '_stock_weight', $quantity);
         }
+
+        $product->save();
 
 
 		// Внешний код
