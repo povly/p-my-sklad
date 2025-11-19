@@ -319,6 +319,7 @@ function p_my_sklad_import_single_product($ms_product, $settings)
                 foreach ($taxonomies as $tax) {
                     if ($tax->attribute_name == $attribute_name) {
                         $attribute_id = $tax->attribute_id;
+                        p_my_sklad_log()->error('Attribute нашелся: ', ['attribute_name' => $attribute_name, 'attribute_id' => $attribute_id]);
                         break;
                     }
                 }
@@ -330,13 +331,13 @@ function p_my_sklad_import_single_product($ms_product, $settings)
                         'type' => 'select',
                     ]);
 
+                    p_my_sklad_log()->error('Attribute создали: ', ['attribute_id' => $new_attribute_id]);
+
                     if (is_wp_error($new_attribute_id)) {
                         throw new Exception('Не удалось создать атрибут "Вес": ' . $new_attribute_id->get_error_message());
                     }
                     $attribute_id = $new_attribute_id;
                 }
-
-                $product = wc_get_product(5224);
 
                 // Терминировать новые опции и собрать все term IDs
                 $all_term_ids = [];
@@ -363,6 +364,7 @@ function p_my_sklad_import_single_product($ms_product, $settings)
                     }
                 }
 
+                p_my_sklad_log()->error('Term ids: ', ['all_term_ids' => $all_term_ids]);
                 $unique_term_ids = array_unique($all_term_ids);
 
                 // Установить атрибут продукту
@@ -372,6 +374,7 @@ function p_my_sklad_import_single_product($ms_product, $settings)
                 $attribute->set_options($unique_term_ids);
                 $attribute->set_visible(true);
                 $attribute->set_variation(true);
+
                 $product->set_attributes([$attribute]);
                 $product->save();
 
@@ -394,6 +397,7 @@ function p_my_sklad_import_single_product($ms_product, $settings)
                         $variation = new WC_Product_Variation();
                         $variation->set_parent_id($product->get_id());
                         $variation->set_attributes([$taxonomy => $slug]);
+                        $variation->set_status('publish');
                         $variation->save();
                         p_my_sklad_log()->debug('Создана новая вариация', ['taxonomy' => $taxonomy, 'term_slug' => $slug]);
                     }
