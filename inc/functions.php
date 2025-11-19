@@ -428,6 +428,7 @@ function p_my_sklad_import_single_product($ms_product, $settings)
             $product->set_stock_status($quantity > 0 ? 'instock' : 'outofstock');
         } else {
             $product->set_manage_stock(false);
+            $product->set_stock_status('outofstock');
             update_post_meta($product->get_id(), '_is_weight_based', 'yes');
             update_post_meta($product->get_id(), '_stock_weight', $quantity);
         }
